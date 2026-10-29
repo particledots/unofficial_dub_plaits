@@ -8,7 +8,16 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-14     # Apple silicon runner
+    name: build (${{ matrix.os }})
+    strategy:
+      fail-fast: false      # one runner type being busy must not hide the other's result
+      matrix:
+        include:
+          - os: macos-14          # Apple silicon runner (arm64)
+            artifact: Dub-Stab-Plaits-macOS
+          - os: macos-15-intel    # Intel runner (x86_64): same universal build, tests run on the Intel CPU
+            artifact: Dub-Stab-Plaits-macOS-built-on-intel-runner
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -85,7 +94,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Dub-Stab-Plaits-macOS
+          name: ${{ matrix.artifact }}
           path: Dub-Stab-Plaits-macOS.zip
 
       # After the upload on purpose: a problem here shows up red but can never stop the plug-in artifact from being produced.
