@@ -1,0 +1,64 @@
+name: Build plugin (macOS)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:      # adds a "Run workflow" button in the Actions tab
+
+jobs:
+  build-macos:
+    runs-on: macos-14     # Apple silicon runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCOPY_PLUGIN_AFTER_BUILD=OFF -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build AU + VST3
+        run: cmake --build build --target DubStabPlaits_AU DubStabPlaits_VST3 -j4
+
+      - name: Ad-hoc sign (lets Apple silicon load an unsigned build)
+        run: |
+          for b in build/DubStabPlaits_artefacts/Release/AU/*.component build/DubStabPlaits_artefacts/Release/VST3/*.vst3; do
+            codesign --force --deep -s - "$b"
+          done
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp -R build/DubStabPlaits_artefacts/Release/AU/*.component dist/
+          cp -R build/DubStabPlaits_artefacts/Release/VST3/*.vst3 dist/
+          mkdir -p dist/licenses
+          cp LICENSE dist/licenses/LICENSE-particledots.txt
+          cp licenses/CREDITS.md licenses/NARTI-LIVE-LICENSE.txt dist/licenses/
+          lipo -archs dist/*.component/Contents/MacOS/*
+          # Show the minimum macOS version baked into each slice (should say 11.0):
+          for a in arm64 x86_64; do echo "== $a"; lipo -thin $a dist/*.component/Contents/MacOS/* -output /tmp/slice_$a; otool -l /tmp/slice_$a | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN" | grep -E "minos|version"; done
+          cat > dist/INSTALL.txt <<'TXT'
+          1. Unzip.
+          2. Open Terminal and run:   xattr -dr com.apple.quarantine ~/Downloads/Dub-Stab-Plaits-macOS/*
+             (adjust the path if you unzipped elsewhere; this clears the "downloaded from internet" block)
+          3. Copy "Unofficial Dub Stab Plaits.component" to  ~/Library/Audio/Plug-Ins/Components/
+             Copy "Unofficial Dub Stab Plaits.vst3"       to  ~/Library/Audio/Plug-Ins/VST3/
+          4. In Logic: Settings > Plug-in Manager > rescan.
+          5. It is a plain instrument (no audio input): make a Software Instrument track, click its
+             Instrument slot, and choose Audio Units > particledots > Unofficial Dub Stab Plaits.
+          6. Credits and licences: see the "licenses" folder. Not affiliated with Narti Live or Mutable Instruments.
+          TXT
+          ditto -c -k --keepParent dist Dub-Stab-Plaits-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dub-Stab-Plaits-macOS
+          path: Dub-Stab-Plaits-macOS.zip
+
+      # After the upload on purpose: a problem here shows up red but can never stop the plug-in artifact from being produced.
+      - name: Processor test (the real plug-in code, no host)
+        timeout-minutes: 10
+        shell: bash {0}
+        run: |
+          cmake --build build --target plugin_test -j4 || exit 1
+          ./build/plugin_test > plugin_test.log 2>&1; rc=$?; cat plugin_test.log
+          if [ $rc -ne 0 ]; then grep -n -E "FAIL" plugin_test.log | head -15 | while IFS= read -r l; do echo "::error::plugin_test: $l"; done; fi
+          exit $rc
