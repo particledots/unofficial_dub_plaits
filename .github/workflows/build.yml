@@ -47,6 +47,7 @@ jobs:
           if [ $rc -eq 0 ]; then
             echo "scenarios: $(grep -c '^## ' expected.txt), log lines: $(wc -l < expected.txt | tr -d ' ')"
             if cmp -s expected.txt actual.txt; then echo "sequencer cross-check: the C++ port and the original JavaScript give identical logs"
+              echo "::notice::sequencer cross-check IDENTICAL: $(grep -c '^## ' expected.txt) scenarios, $(wc -l < expected.txt | tr -d ' ') log lines (node $(node --version), runner $(uname -m))"
             else
               rc=1
               n=$(cmp expected.txt actual.txt 2>&1 | sed -E 's/.*line ([0-9]+).*/\1/')
@@ -56,7 +57,7 @@ jobs:
               echo "--- scenario:"; awk -v n="$n" 'NR<=n && /^## /{s=$0} NR==n{print s}' expected.txt
             fi
           fi
-          [ $rc -eq 0 ] && step ./build/transport_test
+          [ $rc -eq 0 ] && step ./build/transport_test && echo "::notice::$(tail -1 step.log) (runner $(uname -m))"
           exit $rc
 
       - name: Build AU + VST3
@@ -77,8 +78,10 @@ jobs:
           cp LICENSE dist/licenses/LICENSE-particledots.txt
           cp licenses/CREDITS.md licenses/NARTI-LIVE-LICENSE.txt dist/licenses/
           lipo -archs dist/*.component/Contents/MacOS/*
+          echo "::notice::AU binary architectures: $(lipo -archs dist/*.component/Contents/MacOS/*); VST3: $(lipo -archs dist/*.vst3/Contents/MacOS/*)"
+          codesign --verify --deep dist/*.component && echo "::notice::AU ad-hoc signature verifies"
           # Show the minimum macOS version baked into each slice (should say 11.0):
-          for a in arm64 x86_64; do echo "== $a"; lipo -thin $a dist/*.component/Contents/MacOS/* -output /tmp/slice_$a; otool -l /tmp/slice_$a | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN" | grep -E "minos|version"; done
+          for a in arm64 x86_64; do echo "== $a"; lipo -thin $a dist/*.component/Contents/MacOS/* -output /tmp/slice_$a; otool -l /tmp/slice_$a | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN" | grep -E "minos|version"; echo "::notice::$a slice minimum macOS: $(otool -l /tmp/slice_$a | grep -A4 -E 'LC_BUILD_VERSION|LC_VERSION_MIN' | grep -E 'minos|version' | head -1 | tr -s ' ')"; done
           cat > dist/INSTALL.txt <<'TXT'
           1. Unzip.
           2. Open Terminal and run:   xattr -dr com.apple.quarantine ~/Downloads/Dub-Stab-Plaits-macOS/*
@@ -110,6 +113,7 @@ jobs:
             exit $rc
           fi
           ./build/plugin_test > plugin_test.log 2>&1; rc=$?; cat plugin_test.log
+          [ $rc -eq 0 ] && echo "::notice::$(tail -1 plugin_test.log) (runner $(uname -m))"
           if [ $rc -ne 0 ]; then
             grep -n -E "FAIL|Assertion|JUCE Assertion" plugin_test.log | head -15 | while IFS= read -r l; do echo "::error::plugin_test: $l"; done
             echo "::error::plugin_test exited with code $rc; last lines: $(tail -5 plugin_test.log | tr '\n' ' ')"
