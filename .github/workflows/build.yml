@@ -10,16 +10,11 @@ jobs:
   build-macos:
     name: build (${{ matrix.os }})
     # GitHub's Apple-silicon runners are often unavailable for 15+ minutes and then the job is cancelled, which turned every
-    # run red. So a normal push builds on the Intel runner only; the Apple-silicon job runs from the "Run workflow" button.
-    if: matrix.os != 'macos-14' || github.event_name == 'workflow_dispatch'
+    # run red. So a normal push builds on the Intel runner only; the "Run workflow" button also adds the Apple-silicon job.
     strategy:
       fail-fast: false      # one runner type being busy must not hide the other's result
       matrix:
-        include:
-          - os: macos-14          # Apple silicon runner (arm64)
-            artifact: Dub-Stab-Plaits-macOS
-          - os: macos-15-intel    # Intel runner (x86_64): same universal build, tests run on the Intel CPU
-            artifact: Dub-Stab-Plaits-macOS-built-on-intel-runner
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[{"os":"macos-14","artifact":"Dub-Stab-Plaits-macOS"},{"os":"macos-15-intel","artifact":"Dub-Stab-Plaits-macOS-built-on-intel-runner"}]' || '[{"os":"macos-15-intel","artifact":"Dub-Stab-Plaits-macOS-built-on-intel-runner"}]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
