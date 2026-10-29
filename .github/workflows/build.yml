@@ -102,7 +102,16 @@ jobs:
         timeout-minutes: 10
         shell: bash {0}
         run: |
-          cmake --build build --target plugin_test -j4 || exit 1
+          # Compiler errors, crashes and FAIL lines are all repeated as annotations, so they can be read without opening the log.
+          cmake --build build --target plugin_test -j4 > plugin_build.log 2>&1; rc=$?
+          if [ $rc -ne 0 ]; then
+            tail -40 plugin_build.log
+            grep -n -E "error|undefined|ld:" plugin_build.log | head -15 | while IFS= read -r l; do echo "::error::plugin_test build: $l"; done
+            exit $rc
+          fi
           ./build/plugin_test > plugin_test.log 2>&1; rc=$?; cat plugin_test.log
-          if [ $rc -ne 0 ]; then grep -n -E "FAIL" plugin_test.log | head -15 | while IFS= read -r l; do echo "::error::plugin_test: $l"; done; fi
+          if [ $rc -ne 0 ]; then
+            grep -n -E "FAIL|Assertion|JUCE Assertion" plugin_test.log | head -15 | while IFS= read -r l; do echo "::error::plugin_test: $l"; done
+            echo "::error::plugin_test exited with code $rc; last lines: $(tail -5 plugin_test.log | tr '\n' ' ')"
+          fi
           exit $rc

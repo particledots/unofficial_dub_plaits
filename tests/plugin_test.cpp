@@ -5,21 +5,26 @@
 #include "PluginProcessor.h"
 #include <cstdio>
 #include <cmath>
+#include <memory>
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (! (cond)) { ++failures; std::printf ("FAIL: %s\n", msg); } } while (0)
 
 int main()
 {
-    DubStabAudioProcessor p;
+    juce::ScopedJuceInitialiser_GUI init;                         // JUCE needs its message manager, like inside a host
+    std::unique_ptr<juce::AudioProcessor> base (createPluginFilter());
+    auto& p = *static_cast<DubStabAudioProcessor*> (base.get());
+    p.setPlayConfigDetails (0, 2, 48000.0, 512);
+    p.prepareToPlay (48000.0, 512);
+
     CHECK (p.getName() == "Unofficial Dub Stab Plaits", "plug-in name");
     CHECK (p.acceptsMidi(), "accepts MIDI");
     CHECK (! p.producesMidi(), "does not produce MIDI");
     CHECK (p.getTotalNumInputChannels() == 0, "no audio input");
     CHECK (p.getTotalNumOutputChannels() == 2, "stereo output");
-
-    p.setRateAndBufferSizeDetails (48000.0, 512);
-    p.prepareToPlay (48000.0, 512);
 
     juce::AudioBuffer<float> buf (2, 512);
     bool allZero = true, finite = true;
