@@ -37,7 +37,7 @@ juce_add_plugin(DubStabPlaits
 endif()
 
 # --- JUCE-free core (sequencer, transport clock, later the sound models), so the tests run headless ---
-set(DUB_CORE_SOURCES src/core/Version.cpp)
+set(DUB_CORE_SOURCES src/core/Version.cpp src/core/DubSequencer.cpp src/core/TransportClock.cpp)
 add_library(dub_core STATIC ${DUB_CORE_SOURCES})
 target_include_directories(dub_core PUBLIC src)
 set_target_properties(dub_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -63,3 +63,12 @@ add_executable(plugin_test EXCLUDE_FROM_ALL tests/plugin_test.cpp)
 target_compile_definitions(plugin_test PRIVATE JucePlugin_Name="Unofficial Dub Stab Plaits" JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(plugin_test PRIVATE DubStabPlaits juce::juce_audio_utils juce::juce_recommended_config_flags)
 endif()
+
+# --- Sequencer cross-check against the original JavaScript:  build/seq_crosscheck tests/scenarios.txt > actual.txt
+#     (CI runs the original with node on the same scenarios and compares the two logs line by line) ---
+add_executable(seq_crosscheck EXCLUDE_FROM_ALL tests/seq_crosscheck.cpp)
+target_link_libraries(seq_crosscheck PRIVATE dub_core)
+
+# --- Transport tests (start, stop, loop jump, tempo change, block sizes), JUCE-free:  build/transport_test ---
+add_executable(transport_test EXCLUDE_FROM_ALL tests/transport_test.cpp)
+target_link_libraries(transport_test PRIVATE dub_core)

@@ -15,6 +15,41 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCOPY_PLUGIN_AFTER_BUILD=OFF -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Reference script is the unmodified original
+        run: |
+          cd tests/reference
+          shasum -a 256 -c dubstab.js.sha256
+
+      - name: Headless tests (sequencer vs the original JavaScript, transport)
+        shell: bash {0}
+        run: |
+          # Any failing line is also repeated as an annotation, so it can be read without opening the full log.
+          rc=0
+          step() { "$@" > step.log 2>&1; local r=$?; cat step.log;
+                   if [ $r -ne 0 ]; then rc=$r; grep -n -i -E "FAIL|error|Assertion|Abort" step.log | head -15 | while IFS= read -r l; do echo "::error::$*: $l"; done; fi; }
+          step cmake --build build --target seq_crosscheck transport_test -j4
+          node --version
+          [ $rc -eq 0 ] && { node tests/reference/ref_dump.js tests/scenarios.txt > expected.txt || rc=$?; }
+          [ $rc -eq 0 ] && { ./build/seq_crosscheck tests/scenarios.txt > actual.txt || rc=$?; }
+          if [ $rc -eq 0 ]; then
+            echo "scenarios: $(grep -c '^## ' expected.txt), log lines: $(wc -l < expected.txt | tr -d ' ')"
+            if cmp -s expected.txt actual.txt; then echo "sequencer cross-check: the C++ port and the original JavaScript give identical logs"
+            else
+              rc=1
+              n=$(cmp expected.txt actual.txt 2>&1 | sed -E 's/.*line ([0-9]+).*/\1/')
+              echo "::error::sequencer cross-check: first difference at line $n"
+              echo "--- original (JavaScript) vs port (C++), around line $n"
+              diff <(sed -n "$((n>3?n-3:1)),$((n+3))p" expected.txt) <(sed -n "$((n>3?n-3:1)),$((n+3))p" actual.txt) | head -20
+              echo "--- scenario:"; awk -v n="$n" 'NR<=n && /^## /{s=$0} NR==n{print s}' expected.txt
+            fi
+          fi
+          [ $rc -eq 0 ] && step ./build/transport_test
+          exit $rc
+
       - name: Build AU + VST3
         run: cmake --build build --target DubStabPlaits_AU DubStabPlaits_VST3 -j4
 
