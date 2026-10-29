@@ -60,6 +60,7 @@ target_link_libraries(DubStabPlaits PRIVATE
 
 # --- Processor-level test (no host or window needed):  build/plugin_test ---
 add_executable(plugin_test EXCLUDE_FROM_ALL tests/plugin_test.cpp)
+target_include_directories(plugin_test PRIVATE src)
 target_compile_definitions(plugin_test PRIVATE JucePlugin_Name="Unofficial Dub Stab Plaits" JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(plugin_test PRIVATE DubStabPlaits juce::juce_audio_utils juce::juce_recommended_config_flags)
 endif()
