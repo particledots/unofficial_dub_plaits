@@ -9,6 +9,9 @@ on:
 jobs:
   build-macos:
     name: build (${{ matrix.os }})
+    # GitHub's Apple-silicon runners are often unavailable for 15+ minutes and then the job is cancelled, which turned every
+    # run red. So a normal push builds on the Intel runner only; the Apple-silicon job runs from the "Run workflow" button.
+    if: matrix.os != 'macos-14' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false      # one runner type being busy must not hide the other's result
       matrix:
