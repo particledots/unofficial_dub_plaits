@@ -32,6 +32,6 @@ connected to the plug-in yet, and there is no sound until step 3.
 | Transport clock: events identical for 7 block sizes, 3 sample rates, 3 tempos, on-grid and off-grid starts; sample positions within 1 sample; stop releases held notes; restart and loop jump follow the song position; tempo changes; count-in; random fuzz with no hanging notes | **297,542 checks pass in CI** (Intel runner) |
 | The transport tests can fail: 10 deliberate mistakes in the clock | 9 caught locally; 1 harmless (the sequencer already ignores negative positions) |
 | Sequencer connected to the plug-in, sound models, parameters, editor | **not built yet** (steps 3-4) |
-| Loads in Logic on the M4 Mac mini | **not checked** |
-| Loads in Logic on the Intel Mac | **not checked** |
-| Transport sync in a real Logic session, MIDI feel, sound next to the module or the Max devices | **not checked** |
+| Loads in Logic on the M4 Mac mini | **confirmed by Bryn (29 Oct 2026)**: appears under particledots and loads; silent, as expected at this stage |
+| Loads in Logic on the Intel Mac | **confirmed by Bryn (29 Oct 2026)**: same |
+| Transport sync in a real Logic session, MIDI feel, sound next to the module or the Max devices | **not checked** (no sound yet) |
