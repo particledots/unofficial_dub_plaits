@@ -1,6 +1,6 @@
 // DubSynth: the eight sound models of DUB STAB PLAITS, driven by the events of DubSequencer.
 //
-//   0 DUB SAW     \
+//   0 DUB SAW
 //   1 VA           |  Narti Live's PolySynth from the firmware (third_party/plaits/dub/dub.cc, used as published):
 //   2 WAVESHAPE    |  six voices, one filter and envelope for the whole chord
 //   3 FM           |

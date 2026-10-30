@@ -315,6 +315,8 @@ void DubSequencer::generate()
 
 // ------------------------------------------------------------------ output
 
+int DubSequencer::rateTicks (int rate) { return RATE_TICKS[std::max (0, std::min (7, rate))]; }
+
 std::string DubSequencer::patternText (const Settings& s, const Pattern& p, int current)
 {
     std::string out;

@@ -117,6 +117,7 @@ public:
     const Pattern& pattern() const { return P; }
     void generate();                                       // rebuild the pattern from the current seed / melody
     static std::string patternText (const Settings&, const Pattern&, int currentStep);
+    static int rateTicks (int rate);                       // ticks (480 per quarter) per step for a Rate setting 0..7
     Chord buildChord (int degree, int voicing) const;
     int semitonesToDegrees (int semitones) const;
     int monoNote (int degree, int step) const;
