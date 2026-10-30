@@ -14,7 +14,12 @@ Mutable Instruments or Emilie Gillet, and none of them are affiliated with it.
     port can be checked against it (see `tests/reference/README.md`).
   - Project page: https://narti-live.github.io/dub-base-Plaits
 - **Plaits** by **Emilie Gillet** / Mutable Instruments (MIT, Copyright (c) 2016-2021 Emilie Gillet):
-  the synthesis engines the Dub Stab models are built on (used from step 3 on).
+  the synthesis engines the Dub Stab models are built on. The STRINGS model is the Plaits string machine engine, and the
+  oscillator, filter and DSP helper code (stmlib) is vendored in `third_party/`; `third_party/VERSIONS.txt` lists the exact
+  upstream commits and files.
+- **Narti Live's `dub.cc`** (the firmware's polyphonic dub synth: DUB SAW, VA, WAVESHAPE, FM, PHASE DIST and the model-6 slot
+  CHIPTUNE) is used as published, vendored in `third_party/plaits/dub/`. The ACID bass voice (`src/core/AcidVoice.cpp`) is a
+  port of the gen~ code in the Max for Live devices.
   The Plaits firmware copyright line is part of Narti Live's licence file and is kept as it is.
 
 Both licence notices are in `licenses/NARTI-LIVE-LICENSE.txt` (verbatim copy of the upstream file).
@@ -22,5 +27,5 @@ The fonts mentioned at the end of that file belong to Narti Live's website and a
 
 ## Not taken from anywhere
 
-- **VHIKK** (model 6 on the module) is not in any published source. It will be written new from the published
-  description of how it sounds, and will not be identical.
+- **VHIKK** (model 6 on the module) is not in any published source. For now model 6 is the firmware's published CHIPTUNE
+  slot as a stand-in. VHIKK will be written new from the published description of how it sounds, and will not be identical.

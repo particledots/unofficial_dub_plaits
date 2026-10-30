@@ -1,0 +1,45 @@
+Vendored by tools/vendor_sources.sh. Only the files the sound models need (include closure of: plaits/dub/dub.cc plaits/dsp/engine2/string_machine_engine.cc plaits/dsp/chords/chord_bank.cc plaits/resources.cc stmlib/utils/random.cc stmlib/dsp/units.cc).
+
+plaits (Emilie Gillet, MIT):   https://github.com/pichenettes/eurorack @ f4cfa7697095a28d292bff758beb51deb49b5a86
+stmlib (Emilie Gillet, MIT):   https://github.com/pichenettes/stmlib    @ d18def816c51d1da0c108236928b2bbd25c17481
+dub.h, dub.cc (Narti Live, MIT) and his edits of four Plaits files:
+                               https://github.com/Narti-Live/dub-base-Plaits @ e0146c498b6a7eba316666e573995715e3807e6f
+                               (firmware/files/plaits/...)
+
+Differences between the four edited Plaits files here and upstream (Narti Live's changes, nothing of ours):
+  plaits/dsp/chords/chord_bank.cc: 2 changed lines
+  plaits/dsp/chords/chord_bank.h: 19 changed lines
+  plaits/dsp/engine/chord_engine.h: 2 changed lines
+  plaits/dsp/engine2/string_machine_engine.h: 2 changed lines
+
+Files (30):
+  plaits/dsp/chords/chord_bank.cc
+  plaits/dsp/chords/chord_bank.h
+  plaits/dsp/dsp.h
+  plaits/dsp/engine/chord_engine.h
+  plaits/dsp/engine/engine.h
+  plaits/dsp/engine2/string_machine_engine.cc
+  plaits/dsp/engine2/string_machine_engine.h
+  plaits/dsp/fx/ensemble.h
+  plaits/dsp/fx/fx_engine.h
+  plaits/dsp/oscillator/oscillator.h
+  plaits/dsp/oscillator/sine_oscillator.h
+  plaits/dsp/oscillator/string_synth_oscillator.h
+  plaits/dsp/oscillator/wavetable_oscillator.h
+  plaits/dub/dub.cc
+  plaits/dub/dub.h
+  plaits/resources.cc
+  plaits/resources.h
+  stmlib/dsp/cosine_oscillator.h
+  stmlib/dsp/dsp.h
+  stmlib/dsp/filter.h
+  stmlib/dsp/hysteresis_quantizer.h
+  stmlib/dsp/parameter_interpolator.h
+  stmlib/dsp/polyblep.h
+  stmlib/dsp/rsqrt.h
+  stmlib/dsp/units.cc
+  stmlib/dsp/units.h
+  stmlib/stmlib.h
+  stmlib/utils/buffer_allocator.h
+  stmlib/utils/random.cc
+  stmlib/utils/random.h

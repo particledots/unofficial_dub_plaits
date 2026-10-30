@@ -36,10 +36,33 @@ juce_add_plugin(DubStabPlaits
   COPY_PLUGIN_AFTER_BUILD TRUE)
 endif()
 
-# --- JUCE-free core (sequencer, transport clock, later the sound models), so the tests run headless ---
-set(DUB_CORE_SOURCES src/core/Version.cpp src/core/DubSequencer.cpp src/core/TransportClock.cpp)
+# --- Vendored sources of the sound models: Narti Live's dub.cc, the Plaits string machine, stmlib (see third_party/VERSIONS.txt) ---
+set(DUB_PLAITS_SOURCES
+  third_party/plaits/dub/dub.cc
+  third_party/plaits/dsp/engine2/string_machine_engine.cc
+  third_party/plaits/dsp/chords/chord_bank.cc
+  third_party/plaits/resources.cc
+  third_party/stmlib/utils/random.cc
+  third_party/stmlib/dsp/units.cc)
+add_library(dub_plaits STATIC ${DUB_PLAITS_SOURCES})
+target_include_directories(dub_plaits PUBLIC third_party)
+# TEST=1 is the upstream desktop-build switch: it turns the STM32 flash / assembly code into portable stand-ins.
+target_compile_definitions(dub_plaits PUBLIC TEST=1)
+set_target_properties(dub_plaits PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Some upstream headers rely on <cstdio>/<cstdlib>/<cmath>/<cstdint> being pulled in transitively.
+if(MSVC)
+  target_compile_options(dub_plaits PRIVATE /FIcstdio /FIcstdlib /FIcmath /FIcstdint)
+else()
+  target_compile_options(dub_plaits PRIVATE "SHELL:-include cstdio" "SHELL:-include cstdlib" "SHELL:-include cmath" "SHELL:-include cstdint"
+    -Wno-unused-local-typedef -Wno-unused-variable)
+endif()
+
+# --- JUCE-free core (sequencer, transport clock, the synth), so the tests run headless ---
+set(DUB_CORE_SOURCES src/core/Version.cpp src/core/DubSequencer.cpp src/core/TransportClock.cpp
+                     src/core/AcidVoice.cpp src/core/DubSynth.cpp)
 add_library(dub_core STATIC ${DUB_CORE_SOURCES})
 target_include_directories(dub_core PUBLIC src)
+target_link_libraries(dub_core PUBLIC dub_plaits)
 set_target_properties(dub_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # No fused multiply-add and no fast-math: the sequencer must give the same numbers as the JavaScript original
 # (Apple clang would otherwise fuse a*b+c on arm64, which the original does not do).
@@ -73,3 +96,12 @@ target_link_libraries(seq_crosscheck PRIVATE dub_core)
 # --- Transport tests (start, stop, loop jump, tempo change, block sizes), JUCE-free:  build/transport_test ---
 add_executable(transport_test EXCLUDE_FROM_ALL tests/transport_test.cpp)
 target_link_libraries(transport_test PRIVATE dub_core)
+
+# --- Sound model tests (every model, 3 sample rates; finite / bounded / not silent; block sizes; switching; the whole
+#     sequencer -> clock -> synth chain), JUCE-free:  build/synth_test ---
+add_executable(synth_test EXCLUDE_FROM_ALL tests/synth_test.cpp)
+target_link_libraries(synth_test PRIVATE dub_core)
+
+# --- Listening aid: one WAV per sound model played by the real sequencer (CI uploads them):  build/render_demos <folder> ---
+add_executable(render_demos EXCLUDE_FROM_ALL tools/render_demos.cpp)
+target_link_libraries(render_demos PRIVATE dub_core)

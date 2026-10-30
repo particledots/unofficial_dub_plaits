@@ -6,9 +6,15 @@ A community AU / VST3 instrument for Logic Pro (and other hosts), based on the *
 Not affiliated with, made or supported by Narti Live, Mutable Instruments or Emilie Gillet. See `licenses/` for the credits
 and the MIT licence notices, which must stay with every copy.
 
-**Status: work in progress (steps 1-2 of 7: empty instrument + sequencer).** It builds and loads as a silent instrument.
-The generative sequencer (a C++ port of Narti Live's `dubstab.js`) and its transport clock are in and tested, but they are not
-connected to the plug-in yet, and there is no sound until step 3.
+**Status: work in progress (steps 1-3 of 7: empty instrument, sequencer, sound models).** The plug-in builds and loads, but it is
+still a silent instrument. The generative sequencer (a C++ port of Narti Live's `dubstab.js`), its transport clock and the eight
+sound models (`src/core/DubSynth`) are written and tested on their own, but they are not connected to the plug-in yet: that is
+step 4. Until then the only way to hear the models is the demo WAV files that every CI run produces (see below).
+
+## Hearing the sound models before the plug-in makes sound
+
+Each CI run also uploads **Dub-Stab-Plaits-macOS-built-on-intel-runner-model-demos**: eight WAV files, one per model, played by
+the real sequencer (dry, 124 BPM, 8 bars, C minor, default knobs). Model 6 is a stand-in (CHIPTUNE), see below.
 
 ## Getting the plug-in
 
@@ -31,7 +37,13 @@ connected to the plug-in yet, and there is no sound until step 3.
 | The cross-check can fail: 7 deliberate port mistakes (rank bias, probability, gate length, off-order, scale table, seeding arithmetic, sort tie-break) | 6 caught locally; the tie-break case cannot be reached by any scenario (needs two equal 32-bit random numbers) |
 | Transport clock: events identical for 7 block sizes, 3 sample rates, 3 tempos, on-grid and off-grid starts; sample positions within 1 sample; stop releases held notes; restart and loop jump follow the song position; tempo changes; count-in; random fuzz with no hanging notes | **297,542 checks pass in CI** (Intel runner) |
 | The transport tests can fail: 10 deliberate mistakes in the clock | 9 caught locally; 1 harmless (the sequencer already ignores negative positions) |
-| Sequencer connected to the plug-in, sound models, parameters, editor | **not built yet** (steps 3-4) |
+| Sound models (`DubSynth`): all 8 models x 3 sample rates (44.1 / 48 / 96 kHz): output finite, bounded, not silent; identical output for any host buffer size; model switching; hostile parameter values (NaN, out of range); event floods; the whole sequencer -> clock -> synth chain; pitch (A3 within 0.3 %, resampler within 0.002 %) | **9,268 checks pass locally** (g++, plus an AddressSanitizer / UBSan run); CI runs the same tests (see the run's annotations) |
+| The sound-model tests can fail: deliberate mistakes in the synth | caught locally (checked by hand-made mutations) |
+| Pitch of the poly models and STRINGS | measured about 1 cent flat (poly) and about 2.4 cents flat (STRINGS) after the filter opens. Narti Live's unmodified firmware code shows the same offset with no resampler involved; the oscillator itself runs at exactly 220.0001 Hz. Not a tuning claim, only a bounds check |
+| ACID model vs the gen~ code of the Max devices | ported by hand in double precision; **not yet cross-checked against the original gen~ code** |
+| **How the models sound** (next to the module, the Max devices, or anything else) | **not checked: needs Bryn to listen** |
+| Model 6 | **CHIPTUNE stand-in**: the firmware's published slot 6. VHIKK is not in any published source |
+| Sequencer connected to the plug-in, parameters, editor | **not built yet** (step 4) |
 | Loads in Logic on the M4 Mac mini | **confirmed by Bryn (29 Oct 2026)**: appears under particledots and loads; silent, as expected at this stage |
 | Loads in Logic on the Intel Mac | **confirmed by Bryn (29 Oct 2026)**: same |
 | Transport sync in a real Logic session, MIDI feel, sound next to the module or the Max devices | **not checked** (no sound yet) |
