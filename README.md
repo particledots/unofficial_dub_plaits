@@ -6,10 +6,19 @@ A community AU / VST3 instrument for Logic Pro (and other hosts), based on the *
 Not affiliated with, made or supported by Narti Live, Mutable Instruments or Emilie Gillet. See `licenses/` for the credits
 and the MIT licence notices, which must stay with every copy.
 
-**Status: work in progress (steps 1-3 of 7: empty instrument, sequencer, sound models).** The plug-in builds and loads, but it is
-still a silent instrument. The generative sequencer (a C++ port of Narti Live's `dubstab.js`), its transport clock and the eight
-sound models (`src/core/DubSynth`) are written and tested on their own, but they are not connected to the plug-in yet: that is
-step 4. Until then the only way to hear the models is the demo WAV files that every CI run produces (see below).
+**Status: step 4 of 7 written (the plug-in makes sound).** The sequencer (a C++ port of Narti Live's `dubstab.js`), its
+transport clock and the eight sound models are connected to the plug-in, with a window, parameters and saved state. Extras on
+top of the module: free-run mode, built-in echo / reverb / stereo width, a sub-bass sine (the module's AUX), a choice of what
+incoming MIDI notes do (transpose the pattern, or play the sound directly, single notes or chords), the current pattern as a
+MIDI file you can drag into a Logic track, presets, and a resizable window. Whether it sounds right is for Bryn to judge by ear.
+
+### What the extra controls do
+- **FREE-RUN WHEN STOPPED**: when the host is stopped the pattern keeps playing at FREE-RUN TEMPO (30-300 BPM). When the host plays, the host's tempo and position take over.
+- **ECHO** (default: 30 % mix, 1/8 dotted, 45 % feedback, tone 50 %, ping-pong) and **REVERB** (default: 20 % mix, 2.5 s decay) are built in, after the sound. Set both mixes to 0 for a dry sound. **WIDTH** 100 % keeps the sound as it is; below 100 % narrows towards mono; above 100 % spreads the dry sound too.
+- **SUB**: the module's AUX sub-bass sine (an octave under the chord root), mixed into the main output. Not available on STRINGS and ACID (the module has no sub there).
+- **MIDI NOTES DO THIS**: *Transpose the pattern* (middle C = no change, as in the Max device) or *Play the notes directly* (the pattern is off; notes played within 2 ms of each other make one stab, so a MIDI effect that sends chords can drive it; up to 5 notes per stab).
+- **DRAG MIDI TO A TRACK** writes the current pattern as a MIDI file (4/4, from bar 1, 1-16 bars) and hands it to the host; **SAVE MIDI...** saves it as a file.
+- **PRESETS**: factory presets and your own, kept in `~/Library/Application Support/particledots/Unofficial Dub Stab Plaits/Presets`. A preset never changes the MIDI-notes or free-run settings.
 
 ## Hearing the sound models before the plug-in makes sound
 
@@ -43,7 +52,11 @@ the real sequencer (dry, 124 BPM, 8 bars, C minor, default knobs). Model 6 is a 
 | ACID model vs the gen~ code of the Max devices | ported by hand in double precision; **not yet cross-checked against the original gen~ code** |
 | **How the models sound** (next to the module, the Max devices, or anything else) | **not checked: needs Bryn to listen** |
 | Model 6 | **CHIPTUNE stand-in**: the firmware's published slot 6. VHIKK is not in any published source |
-| Sequencer connected to the plug-in, parameters, editor | **not built yet** (step 4) |
-| Loads in Logic on the M4 Mac mini | **confirmed by Bryn (29 Oct 2026)**: appears under particledots and loads; silent, as expected at this stage |
-| Loads in Logic on the Intel Mac | **confirmed by Bryn (29 Oct 2026)**: same |
-| Transport sync in a real Logic session, MIDI feel, sound next to the module or the Max devices | **not checked** (no sound yet) |
+| Plug-in processor (fake host, no window): stopped = silent, plays, every model, sub, effects tails, free-run equals host at the same tempo, direct play, factory + user presets, MIDI export file, saved state, editor at 60-200 %, drag file | **passes locally** (Linux, g++); CI runs the same test |
+| Echo / reverb / width (`fx_test`): echo time at 3 sample rates and 3 tempos, ping-pong, stability at worst-case settings, reverb decay time within 5 % of the setting, level, width, buffer-size independence, NaN input | **299 checks pass locally**; CI runs it |
+| Direct play and MIDI export (`direct_test`): single note, chords with notes a few samples apart, held notes, five-note limit, ACID gate, repeatable export | **5,386 checks pass locally**; CI runs it |
+| Editor layout | looked at in a snapshot rendered on Linux; **not yet seen on a Mac** |
+| Drag a MIDI region into Logic, free-run feel, MIDI chords from Dotriaconta-tone, preset sounds | **not checked in Logic** |
+| Loads in Logic on the M4 Mac mini | **confirmed by Bryn (29 Oct 2026)** for the earlier silent build; not yet checked for this version |
+| Loads in Logic on the Intel Mac | **confirmed by Bryn (29 Oct 2026)** for the earlier silent build; not yet checked for this version |
+| Transport sync in a real Logic session, sound next to the module or the Max devices | **not checked** |

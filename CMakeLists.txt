@@ -59,7 +59,8 @@ endif()
 
 # --- JUCE-free core (sequencer, transport clock, the synth), so the tests run headless ---
 set(DUB_CORE_SOURCES src/core/Version.cpp src/core/DubSequencer.cpp src/core/TransportClock.cpp
-                     src/core/AcidVoice.cpp src/core/DubSynth.cpp)
+                     src/core/AcidVoice.cpp src/core/DubSynth.cpp
+                     src/core/Effects.cpp src/core/DirectPlay.cpp src/core/PatternExport.cpp)
 add_library(dub_core STATIC ${DUB_CORE_SOURCES})
 target_include_directories(dub_core PUBLIC src)
 target_link_libraries(dub_core PUBLIC dub_plaits)
@@ -73,7 +74,7 @@ else()
 endif()
 
 if(NOT DUB_TESTS_ONLY)
-target_sources(DubStabPlaits PRIVATE src/PluginProcessor.cpp src/PluginEditor.cpp)
+target_sources(DubStabPlaits PRIVATE src/PluginProcessor.cpp src/PluginEditor.cpp src/Presets.cpp src/MidiFileExport.cpp)
 target_compile_definitions(DubStabPlaits PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(DubStabPlaits PRIVATE
   dub_core
@@ -85,7 +86,7 @@ target_link_libraries(DubStabPlaits PRIVATE
 add_executable(plugin_test EXCLUDE_FROM_ALL tests/plugin_test.cpp)
 target_include_directories(plugin_test PRIVATE src)
 target_compile_definitions(plugin_test PRIVATE JucePlugin_Name="Unofficial Dub Stab Plaits" JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
-target_link_libraries(plugin_test PRIVATE DubStabPlaits juce::juce_audio_utils juce::juce_recommended_config_flags)
+target_link_libraries(plugin_test PRIVATE DubStabPlaits dub_core juce::juce_audio_utils juce::juce_recommended_config_flags)
 endif()
 
 # --- Sequencer cross-check against the original JavaScript:  build/seq_crosscheck tests/scenarios.txt > actual.txt
@@ -101,6 +102,14 @@ target_link_libraries(transport_test PRIVATE dub_core)
 #     sequencer -> clock -> synth chain), JUCE-free:  build/synth_test ---
 add_executable(synth_test EXCLUDE_FROM_ALL tests/synth_test.cpp)
 target_link_libraries(synth_test PRIVATE dub_core)
+
+# --- Effects (echo, reverb, width), JUCE-free:  build/fx_test ---
+add_executable(fx_test EXCLUDE_FROM_ALL tests/fx_test.cpp)
+target_link_libraries(fx_test PRIVATE dub_core)
+
+# --- Direct play (notes -> stabs), the synth's direct chords and sub-bass output, the pattern exporter, JUCE-free:  build/direct_test ---
+add_executable(direct_test EXCLUDE_FROM_ALL tests/direct_test.cpp)
+target_link_libraries(direct_test PRIVATE dub_core)
 
 # --- Listening aid: one WAV per sound model played by the real sequencer (CI uploads them):  build/render_demos <folder> ---
 add_executable(render_demos EXCLUDE_FROM_ALL tools/render_demos.cpp)

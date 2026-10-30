@@ -31,14 +31,14 @@ jobs:
           cd tests/reference
           shasum -a 256 -c dubstab.js.sha256
 
-      - name: Headless tests (sequencer vs the original JavaScript, transport, sound models)
+      - name: Headless tests (sequencer vs the original JavaScript, transport, sound models, effects, direct play)
         shell: bash {0}
         run: |
           # Any failing line is also repeated as an annotation, so it can be read without opening the full log.
           rc=0
           step() { "$@" > step.log 2>&1; local r=$?; cat step.log;
                    if [ $r -ne 0 ]; then rc=$r; grep -n -i -E "FAIL|error|Assertion|Abort" step.log | head -15 | while IFS= read -r l; do echo "::error::$*: $l"; done; fi; }
-          step cmake --build build --target seq_crosscheck transport_test synth_test render_demos -j4
+          step cmake --build build --target seq_crosscheck transport_test synth_test fx_test direct_test render_demos -j4
           node --version
           [ $rc -eq 0 ] && { node tests/reference/ref_dump.js tests/scenarios.txt > expected.txt || rc=$?; }
           [ $rc -eq 0 ] && { ./build/seq_crosscheck tests/scenarios.txt > actual.txt || rc=$?; }
@@ -59,6 +59,9 @@ jobs:
           # Sound models: finite / bounded / not silent on all 8 models at 3 sample rates, block-size invariance, model
           # switching, hostile input, the whole sequencer -> clock -> synth chain, pitch. (About 1-2 minutes.)
           [ $rc -eq 0 ] && step ./build/synth_test && echo "::notice::$(tail -1 step.log) (runner $(uname -m))"
+          # Echo / reverb / width, and the MIDI-notes-play-directly logic and the pattern -> MIDI export.
+          [ $rc -eq 0 ] && step ./build/fx_test && echo "::notice::$(tail -1 step.log) (runner $(uname -m))"
+          [ $rc -eq 0 ] && step ./build/direct_test && echo "::notice::$(tail -1 step.log) (runner $(uname -m))"
           exit $rc
 
       - name: Build AU + VST3
@@ -92,6 +95,8 @@ jobs:
           4. In Logic: Settings > Plug-in Manager > rescan.
           5. It is a plain instrument (no audio input): make a Software Instrument track, click its
              Instrument slot, and choose Audio Units > particledots > Unofficial Dub Stab Plaits.
+             It plays when Logic plays (or tick FREE-RUN WHEN STOPPED). To drive it from a MIDI effect, set
+             MIDI NOTES DO THIS to "Play the notes directly".
           6. Credits and licences: see the "licenses" folder. Not affiliated with Narti Live or Mutable Instruments.
           TXT
           # Easy installer for Logic (double-click; same file in every Unofficial plugin)
@@ -120,7 +125,7 @@ jobs:
 
       # After the upload on purpose: a problem here shows up red but can never stop the plug-in artifact from being produced.
       - name: Processor test (the real plug-in code, no host)
-        timeout-minutes: 10
+        timeout-minutes: 20
         shell: bash {0}
         run: |
           # Compiler errors, crashes and FAIL lines are all repeated as annotations, so they can be read without opening the log.

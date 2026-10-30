@@ -14,6 +14,9 @@
 // Like the firmware, everything runs at the module's sample rate (47872.34 Hz) in blocks of 12 samples and is converted to
 // the host rate by a windowed-sinc resampler. Output is mono (copied to both channels).
 //
+// AUX: the module's AUX output carries a sub-bass sine that follows the chord root (one octave below it). The poly models
+// 0..5 make it (dub.cc); STRINGS and ACID have none in the source (zero). process() can hand it out separately.
+//
 // Threading: prepare()/reset() may allocate; addEvent() and process() do not (within the sizes given to prepare()).
 #pragma once
 #include "DubSequencer.h"
@@ -56,8 +59,15 @@ public:
     // hostSample = position inside the buffer the next process() call renders; call in time order, before process().
     void addEvent (int hostSample, const Event& e);
 
+    // Direct play (not from the sequencer): one stab of `count` (1..5) notes, MIDI note numbers, ascending. `rootNote` is the
+    // note the sub-bass sine follows (it plays one octave below). accent = the louder, brighter stab. Ignored by ACID.
+    void addChordNotes (int hostSample, const int* notes, int count, int rootNote, bool accent);
+
     // Renders numSamples into outL and outR (the same mono signal). Events added before are consumed.
     void process (float* outL, float* outR, int numSamples, const SynthParams& p);
+    // The same, and the sub-bass sine of the AUX output into outAux (nullptr = not wanted). Scaled by p.gain like the main
+    // output. The main output is identical to the call above.
+    void process (float* outL, float* outR, float* outAux, int numSamples, const SynthParams& p);
 
     // Delay between an event and the first sound it makes, in host samples (report it to the host).
     int latencyInHostSamples() const;

@@ -49,11 +49,13 @@ struct PlaitsPart
 
 struct Cmd
 {
-    enum Kind { Chord, AcidNote, AcidNoteSlide, AcidGateOff, AcidLen };
+    enum Kind { Chord, AcidNote, AcidNoteSlide, AcidGateOff, AcidLen, ChordSet };
     double t = 0;            // engine time (samples) at which it takes effect
     Kind kind = Chord;
     int note = 0, vel = 0;
     double ms = 0;
+    int notes[plaits::dub::kMaxChordNotes] {};   // ChordSet: a whole stab at once (direct play)
+    int count = 0, root = 60;
 };
 
 } // namespace
@@ -78,8 +80,11 @@ struct DubSynth::Impl
         ratio = DubSynth::kEngineRate / hostRate;
         maxHostBlock = std::max (1, maxBlock);
         rs.init (DubSynth::kEngineRate, hostRate, (size_t) kBlock);
+        rsAux.init (DubSynth::kEngineRate, hostRate, (size_t) kBlock);
         hostQ.clear();
         hostQ.reserve ((size_t) maxHostBlock + 512);
+        hostAuxQ.clear();
+        hostAuxQ.reserve ((size_t) maxHostBlock + 512);
         pending.clear();
         pending.reserve (256);
         reset();
@@ -98,7 +103,9 @@ struct DubSynth::Impl
         part->strings.post_processing_settings.aux_gain = 0.8f;
         acid.prepare (DubSynth::kEngineRate);
         rs.reset();
+        rsAux.reset();
         hostQ.clear();
+        hostAuxQ.clear();
         head = 0;
         pending.clear();
         pendingHead = 0;
@@ -134,6 +141,19 @@ struct DubSynth::Impl
             c.kind = Cmd::AcidLen; c.ms = e.ms;
         }
         else return;
+        pending.push_back (c);
+    }
+
+    void addChordSet (int hostSample, const int* notes, int count, int rootNote, bool accent)
+    {
+        if (count <= 0) return;
+        Cmd c;
+        c.t = (double) (hostAbs + hostSample) * ratio + kScheduleDelay;
+        c.kind = Cmd::ChordSet;
+        c.count = std::min (count, (int) plaits::dub::kMaxChordNotes);
+        for (int i = 0; i < c.count; ++i) c.notes[i] = std::min (127, std::max (0, notes[i]));
+        c.root = std::min (127, std::max (0, rootNote));
+        c.vel = accent ? 127 : 90;
         pending.push_back (c);
     }
 
@@ -196,6 +216,8 @@ struct DubSynth::Impl
 
         // ---- events that are due ----
         bool fired = false;
+        bool rootForced = false;      // direct play names the root itself (the sequencer's root is its lowest note)
+        float forcedRoot = 60.0f;
         plaits::dub::Event chord;
         chord.num_notes = 0;
         chord.accent = false;
@@ -214,6 +236,15 @@ struct DubSynth::Impl
                     if (c.vel >= 100) chord.accent = true;
                     fired = true;
                     break;
+                case Cmd::ChordSet:
+                    if (m == kAcid) break;
+                    chord.num_notes = 0;
+                    for (int i = 0; i < c.count && i < plaits::dub::kMaxChordNotes; ++i) chord.notes[chord.num_notes++] = (float) c.notes[i];
+                    chord.accent = c.vel >= 100;
+                    rootForced = true;
+                    forcedRoot = (float) c.root;
+                    fired = true;
+                    break;
                 case Cmd::AcidLen:
                     acidLenMs = c.ms;
                     break;
@@ -229,11 +260,12 @@ struct DubSynth::Impl
         if (fired && chord.num_notes > 0)
         {
             std::sort (chord.notes, chord.notes + chord.num_notes);
-            chord.root = chord.notes[0];
+            chord.root = rootForced ? forcedRoot : chord.notes[0];
         }
         else fired = false;
 
         float out[kBlock], aux[kBlock];
+        for (int i = 0; i < kBlock; ++i) aux[i] = 0.0f;
         if (m <= kChiptune)
         {
             if (fired) part->poly.NoteOn (chord, shape);
@@ -261,6 +293,7 @@ struct DubSynth::Impl
             ep.note = chordNote;
             bool alreadyEnveloped = false;
             e.Render (ep, out, aux, kBlock, &alreadyEnveloped);
+            for (int i = 0; i < kBlock; ++i) aux[i] = 0.0f;       // the engine's own aux is not the sub-bass sine
             // HARMONICS has no chord to choose here: it opens the filter.
             part->post.Process (shape, 1.0f, stmlib::SemitonesToRatio ((h - 0.5f) * 36.0f), out, aux, kBlock);
             const float g = e.post_processing_settings.out_gain;   // 0.8 on the module (the firmware's registry entry)
@@ -279,13 +312,19 @@ struct DubSynth::Impl
             out[i] = v;
         }
         rs.process (out, (size_t) kBlock, hostQ);
+        for (int i = 0; i < kBlock; ++i)
+        {
+            float v = aux[i] * gain;
+            aux[i] = std::isfinite (v) ? v : 0.0f;
+        }
+        rsAux.process (aux, (size_t) kBlock, hostAuxQ);
         engineAbs += kBlock;
     }
 
     PlaitsPart* part = nullptr;
     AcidVoice acid;
-    SincResampler rs;
-    std::vector<float> hostQ;
+    SincResampler rs, rsAux;
+    std::vector<float> hostQ, hostAuxQ;
     size_t head = 0;
     std::vector<Cmd> pending;
     size_t pendingHead = 0;
@@ -306,16 +345,25 @@ DubSynth::~DubSynth() = default;
 void DubSynth::prepare (double hostSampleRate, int maxBlock) { impl_->prepare (hostSampleRate, maxBlock); }
 void DubSynth::reset() { impl_->reset(); }
 void DubSynth::addEvent (int hostSample, const Event& e) { impl_->add (hostSample, e); }
+void DubSynth::addChordNotes (int hostSample, const int* notes, int count, int rootNote, bool accent)
+{
+    impl_->addChordSet (hostSample, notes, count, rootNote, accent);
+}
 
-void DubSynth::process (float* outL, float* outR, int n, const SynthParams& p)
+void DubSynth::process (float* outL, float* outR, int n, const SynthParams& p) { process (outL, outR, nullptr, n, p); }
+
+void DubSynth::process (float* outL, float* outR, float* outAux, int n, const SynthParams& p)
 {
     Impl& s = *impl_;
     while (s.hostQ.size() - s.head < (size_t) n) s.renderBlock (p);
     std::copy (s.hostQ.begin() + (std::ptrdiff_t) s.head, s.hostQ.begin() + (std::ptrdiff_t) s.head + n, outL);
     if (outR != outL) std::copy (outL, outL + n, outR);
+    if (outAux != nullptr)
+        std::copy (s.hostAuxQ.begin() + (std::ptrdiff_t) s.head, s.hostAuxQ.begin() + (std::ptrdiff_t) s.head + n, outAux);
     s.head += (size_t) n;
     // drop what has been handed out
     s.hostQ.erase (s.hostQ.begin(), s.hostQ.begin() + (std::ptrdiff_t) s.head);
+    s.hostAuxQ.erase (s.hostAuxQ.begin(), s.hostAuxQ.begin() + (std::ptrdiff_t) s.head);
     s.head = 0;
     if (s.pendingHead > 0)
     {
