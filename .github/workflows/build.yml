@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false      # one runner type being busy must not hide the other's result
       matrix:
-        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[{"os":"macos-14","artifact":"Dub-Stab-Plaits-macOS"},{"os":"macos-15-intel","artifact":"Dub-Stab-Plaits-macOS-built-on-intel-runner"}]' || '[{"os":"macos-15-intel","artifact":"Dub-Stab-Plaits-macOS-built-on-intel-runner"}]') }}
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[{"os":"macos-26","artifact":"Dub-Stab-Plaits-macOS"},{"os":"macos-15-intel","artifact":"Dub-Stab-Plaits-macOS-built-on-intel-runner"}]' || '[{"os":"macos-15-intel","artifact":"Dub-Stab-Plaits-macOS-built-on-intel-runner"}]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
