@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
-project(UnofficialDubStabPlaits VERSION 0.1.0)
+project(UnofficialDubStabPlaits VERSION 0.2.0)
+
+# The About panel shows the credits and licence notices. The text is read from licenses/ and LICENSE here, at configure time,
+# so the panel can never differ from the files that ship in the zip.
+file(READ licenses/CREDITS.md DUB_CREDITS_TEXT)
+file(READ licenses/NARTI-LIVE-LICENSE.txt DUB_NARTI_LICENSE_TEXT)
+file(READ LICENSE DUB_PARTICLEDOTS_LICENSE_TEXT)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS licenses/CREDITS.md licenses/NARTI-LIVE-LICENSE.txt LICENSE src/AboutText.h.in)
+configure_file(src/AboutText.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/AboutText.h @ONLY)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,6 +83,7 @@ endif()
 
 if(NOT DUB_TESTS_ONLY)
 target_sources(DubStabPlaits PRIVATE src/PluginProcessor.cpp src/PluginEditor.cpp src/Presets.cpp src/MidiFileExport.cpp)
+target_include_directories(DubStabPlaits PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_compile_definitions(DubStabPlaits PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(DubStabPlaits PRIVATE
   dub_core

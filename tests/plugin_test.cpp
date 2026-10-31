@@ -6,6 +6,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Presets.h"
+#include "core/Version.h"
 #include "stmlib/utils/random.h"
 #include <cstdio>
 #include <cstdlib>
@@ -484,6 +485,28 @@ int main()
             CHECK (img.isValid() && img.getWidth() >= 1, msg);
         }
         CHECK (e->countVisibleControls() > 20, "the controls are visible");
+        {   // About / credits: closed by default, opens, shows both licence notices verbatim and the version
+            CHECK (! e->aboutShown(), "About is closed by default");
+            e->showAbout (true);
+            const juce::String a = e->aboutTextShown();
+            CHECK (e->aboutShown(), "About opens");
+            CHECK (a.contains ("Copyright (c) 2026 Narti Live"), "About shows the Narti Live copyright line");
+            CHECK (a.contains ("Plaits firmware Copyright (c) 2016-2021 Emilie Gillet"), "About shows the Emilie Gillet copyright line");
+            CHECK (a.contains ("Permission is hereby granted, free of charge") && a.contains ("THE SOFTWARE IS PROVIDED \"AS IS\""), "About shows the MIT licence text");
+            CHECK (a.contains ("Not affiliated") || a.contains ("not affiliated"), "About says it is not affiliated");
+            CHECK (a.contains (dub::versionString()), "About shows the version");
+            juce::Image ai = ed->createComponentSnapshot (ed->getLocalBounds());
+            CHECK (ai.isValid(), "editor draws with About open");
+            if (ai.isValid())
+            {
+                juce::File out = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("dub_editor_about.png");
+                juce::FileOutputStream fos (out); fos.setPosition (0); fos.truncate();
+                juce::PNGImageFormat().writeImageToStream (ai, fos);
+                std::printf ("editor snapshot: %s\n", out.getFullPathName().toRawUTF8());
+            }
+            e->showAbout (false);
+            CHECK (! e->aboutShown(), "About closes");
+        }
         auto f = e->makeDragFile();
         CHECK (f.existsAsFile() && f.getSize() > 30 && f.hasFileExtension ("mid"), "the drag handle makes a MIDI file");
         f.deleteFile();

@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "Presets.h"
 #include "core/Version.h"
+#include "AboutText.h"
 #include "core/DubSynth.h"
 #include "core/Effects.h"
 #include <algorithm>
@@ -64,6 +65,69 @@ struct DragHandle : public juce::Component, public juce::SettableTooltipClient
 };
 } // namespace
 
+// ============================================================================================ the About panel
+
+// Title, what model 6 is, who made what, then the credits and both licence texts verbatim (generated from licenses/ and LICENSE).
+juce::String buildAboutText()
+{
+    auto plain = [] (juce::String s)
+    {
+        juce::StringArray lines;
+        lines.addLines (s.replace ("**", "").replace ("`", ""));
+        for (auto& l : lines) if (l.startsWithChar ('#')) l = l.trimCharactersAtStart ("# ");   // markdown headings: no # marks
+        return lines.joinIntoString ("\n");
+    };
+    juce::String t;
+    t << "Unofficial Dub Stab Plaits  " << dub::versionString() << "\n\n"
+      << "A community AU / VST3 instrument based on the DUB STAB PLAITS firmware and Max for Live devices by Narti Live, "
+         "built on the Plaits engines by Emilie Gillet (Mutable Instruments). Not affiliated with, made or supported by "
+         "Narti Live, Mutable Instruments or Emilie Gillet.\n\n"
+      << dub::model6Note() << "\n\n"
+      << "Source code: github.com/particledots/unofficial_dub_plaits\n\n"
+      << "------------------------------ CREDITS ------------------------------\n\n" << plain (dub::creditsText()) << "\n\n"
+      << "------------- LICENCE: Narti Live and Emilie Gillet (MIT, verbatim) -------------\n\n" << plain (dub::nartiLicenseText()) << "\n\n"
+      << "------------- LICENCE: this plug-in (MIT) -------------\n\n" << plain (dub::particledotsLicense()) << "\n";
+    return t;
+}
+
+class AboutOverlay : public juce::Component
+{
+public:
+    AboutOverlay()
+    {
+        text.setMultiLine (true, true);
+        text.setReadOnly (true);
+        text.setCaretVisible (false);
+        text.setScrollbarsShown (true);
+        text.setFont (juce::FontOptions (13.0f));
+        text.setColour (juce::TextEditor::backgroundColourId, kPanel);
+        text.setColour (juce::TextEditor::textColourId, kText);
+        text.setColour (juce::TextEditor::outlineColourId, kDim);
+        text.setColour (juce::TextEditor::focusedOutlineColourId, kAccent);
+        close.onClick = [this] { setVisible (false); };
+        addAndMakeVisible (text);
+        addAndMakeVisible (close);
+    }
+    void setText (const juce::String& s) { text.setText (s, false); text.moveCaretToTop (false); }
+    juce::String getText() const { return text.getText(); }
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xe6101214));
+        g.setColour (kAccent);
+        g.setFont (juce::FontOptions (16.0f, juce::Font::bold));
+        g.drawText ("ABOUT / CREDITS / LICENCES", 40, 18, getWidth() - 80, 24, juce::Justification::centredLeft);
+    }
+    void resized() override
+    {
+        text.setBounds (40, 52, getWidth() - 80, getHeight() - 52 - 64);
+        close.setBounds (getWidth() / 2 - 60, getHeight() - 52, 120, 30);
+    }
+    void mouseDown (const juce::MouseEvent&) override {}      // the panel under it does not get the click
+private:
+    juce::TextEditor text;
+    juce::TextButton close { "CLOSE" };
+};
+
 // ============================================================================================ the panel
 
 class DubStabPanel : public juce::Component, private juce::Timer
@@ -75,6 +139,9 @@ public:
     void resized() override;
 
     juce::File makeMidiFileForDrag() { return exportFile(); }
+    void showAbout (bool show) { if (show) { about.setText (buildAboutText()); about.setVisible (true); about.toFront (false); } else about.setVisible (false); }
+    bool aboutShown() const { return about.isVisible(); }
+    juce::String aboutTextShown() const { return about.getText(); }
 
 private:
     using APVTS = juce::AudioProcessorValueTreeState;
@@ -104,7 +171,8 @@ private:
     juce::ToggleButton chords { "CHORDS" }, minorOnly { "MINOR CHORDS ONLY" }, freeRun { "FREE-RUN WHEN STOPPED" };
     std::unique_ptr<APVTS::ButtonAttachment> chordsAtt, minorAtt, freeRunAtt;
     juce::TextButton newPattern { "NEW PATTERN" }, newMelody { "NEW MELODY" }, ownMelody { "ORIGINAL MELODY" };
-    juce::TextButton presetButton { "PRESETS" }, saveMidi { "SAVE MIDI..." };
+    juce::TextButton presetButton { "PRESETS" }, saveMidi { "SAVE MIDI..." }, aboutButton { "ABOUT" };
+    AboutOverlay about;
     DragHandle dragMidi;
     std::unique_ptr<juce::FileChooser> chooser;
 
@@ -173,6 +241,10 @@ DubStabPanel::DubStabPanel (DubStabAudioProcessor& p) : proc (p)
     dragMidi.setTooltip ("Drag this onto a track in the host: the current pattern arrives as a MIDI region.");
     dragMidi.makeFile = [this] { return exportFile(); };
     addAndMakeVisible (dragMidi);
+    addAndMakeVisible (aboutButton);
+    aboutButton.setTooltip ("Credits, who made what, and the licence texts.");
+    aboutButton.onClick = [this] { showAbout (true); };
+    addChildComponent (about);       // last, so it covers everything while it is open
 
     setSize (DubStabEditor::kBaseWidth, DubStabEditor::kBaseHeight);
     updateModelDependent();
@@ -343,7 +415,7 @@ void DubStabPanel::paint (juce::Graphics& g)
 
     g.drawFittedText ("Version " + juce::String (dub::versionString()) +
                       "  -  Not affiliated with Narti Live or Mutable Instruments. See the licenses folder for credits.",
-                      16, getHeight() - 24, getWidth() - 32, 16, juce::Justification::centredLeft, 1);
+                      16, getHeight() - 24, getWidth() - 32 - 96, 16, juce::Justification::centredLeft, 1);
 }
 
 void DubStabPanel::resized()
@@ -351,6 +423,8 @@ void DubStabPanel::resized()
     const int left = 16, right = getWidth() - 16, fullW = right - left;
 
     presetButton.setBounds (360, 12, 100, 26);
+    aboutButton.setBounds (right - 84, getHeight() - 30, 84, 24);
+    about.setBounds (getLocalBounds());
     presetNameArea = { 468, 12, 200, 26 };
     statusArea = { right - 220, 10, 220, 16 };
 
@@ -536,6 +610,9 @@ DubStabEditor::DubStabEditor (DubStabAudioProcessor& p)
 DubStabEditor::~DubStabEditor() = default;
 
 juce::File DubStabEditor::makeDragFile() { return panel->makeMidiFileForDrag(); }
+void DubStabEditor::showAbout (bool show) { panel->showAbout (show); }
+bool DubStabEditor::aboutShown() const { return panel->aboutShown(); }
+juce::String DubStabEditor::aboutTextShown() const { return panel->aboutTextShown(); }
 
 int DubStabEditor::countVisibleControls() const
 {

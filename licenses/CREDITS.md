@@ -25,7 +25,7 @@ Mutable Instruments or Emilie Gillet, and none of them are affiliated with it.
 Both licence notices are in `licenses/NARTI-LIVE-LICENSE.txt` (verbatim copy of the upstream file).
 The fonts mentioned at the end of that file belong to Narti Live's website and app; this plug-in does not use them.
 
-## Not taken from anywhere
+## Not in this plug-in
 
-- **VHIKK** (model 6 on the module) is not in any published source. For now model 6 is the firmware's published CHIPTUNE
-  slot as a stand-in. VHIKK will be written new from the published description of how it sounds, and will not be identical.
+- **VHIKK** (model 6 on the module) is not in any published source, so it is not in this plug-in. Model 6 is the firmware's
+  published CHIPTUNE slot, used as a stand-in.

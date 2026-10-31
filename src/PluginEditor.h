@@ -18,6 +18,10 @@ public:
 
     // What dragging from the DRAG MIDI box would hand to the host (the file is written now). For the tests.
     juce::File makeDragFile();
+    // The About / credits panel (the ABOUT button opens it). For the tests.
+    void showAbout (bool show);
+    bool aboutShown() const;
+    juce::String aboutTextShown() const;
     // Moves the panel's controls for a test; returns the number of child components that are visible.
     int countVisibleControls() const;
 

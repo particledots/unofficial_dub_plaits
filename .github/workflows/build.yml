@@ -97,7 +97,19 @@ jobs:
              Instrument slot, and choose Audio Units > particledots > Unofficial Dub Stab Plaits.
              It plays when Logic plays (or tick FREE-RUN WHEN STOPPED). To drive it from a MIDI effect, set
              MIDI NOTES DO THIS to "Play the notes directly".
-          6. Credits and licences: see the "licenses" folder. Not affiliated with Narti Live or Mutable Instruments.
+          6. Credits and licences: see the "licenses" folder, or click ABOUT in the plug-in window (bottom right).
+             Not affiliated with Narti Live or Mutable Instruments.
+
+          What has and has not been checked (honest list; the README has the full table):
+            Confirmed by the maintainer in Logic Pro, 30 Oct 2026, on an M4 Mac mini and on an Intel Mac:
+              it loads, it plays when Logic plays, FREE-RUN WHEN STOPPED works, dragging the MIDI box onto a track works,
+              the window resizes and keeps its proportions, and "Play the notes directly" driven by a MIDI effect works.
+            Checked by automatic tests on GitHub: the sequencer gives exactly the same notes as the original Max for Live
+              script (2,080 scenarios), the transport clock, every sound model (finite, bounded, not silent, any buffer size),
+              echo / reverb / width, direct play and the MIDI export.
+            NOT checked: how the sounds and the factory presets compare with the real module or the Max devices (nobody has
+              listened side by side yet), the pitch is only checked to within 0.3 %, and model 6 is the CHIPTUNE stand-in:
+              VHIKK is not in any published source.
           TXT
           # Easy installer for Logic (double-click; same file in every Unofficial plugin)
           cp tools/install/Install-Unofficial-Plugin.command dist/

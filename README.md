@@ -6,11 +6,11 @@ A community AU / VST3 instrument for Logic Pro (and other hosts), based on the *
 Not affiliated with, made or supported by Narti Live, Mutable Instruments or Emilie Gillet. See `licenses/` for the credits
 and the MIT licence notices, which must stay with every copy.
 
-**Status: step 4 of 7 written (the plug-in makes sound).** The sequencer (a C++ port of Narti Live's `dubstab.js`), its
+**Status: the plug-in works in Logic (confirmed by Bryn, 30 Oct 2026).** Model 6 is still a stand-in (see below). The sequencer (a C++ port of Narti Live's `dubstab.js`), its
 transport clock and the eight sound models are connected to the plug-in, with a window, parameters and saved state. Extras on
 top of the module: free-run mode, built-in echo / reverb / stereo width, a sub-bass sine (the module's AUX), a choice of what
 incoming MIDI notes do (transpose the pattern, or play the sound directly, single notes or chords), the current pattern as a
-MIDI file you can drag into a Logic track, presets, and a resizable window. Whether it sounds right is for Bryn to judge by ear.
+MIDI file you can drag into a Logic track, presets, a resizable window, and an ABOUT button (bottom right of the window) with the credits and the licence texts. Whether it sounds right is for Bryn to judge by ear: nobody has compared it with the module or the Max devices yet.
 
 ### What the extra controls do
 - **FREE-RUN WHEN STOPPED**: when the host is stopped the pattern keeps playing at FREE-RUN TEMPO (30-300 BPM). When the host plays, the host's tempo and position take over.
@@ -46,17 +46,23 @@ the real sequencer (dry, 124 BPM, 8 bars, C minor, default knobs). Model 6 is a 
 | The cross-check can fail: 7 deliberate port mistakes (rank bias, probability, gate length, off-order, scale table, seeding arithmetic, sort tie-break) | 6 caught locally; the tie-break case cannot be reached by any scenario (needs two equal 32-bit random numbers) |
 | Transport clock: events identical for 7 block sizes, 3 sample rates, 3 tempos, on-grid and off-grid starts; sample positions within 1 sample; stop releases held notes; restart and loop jump follow the song position; tempo changes; count-in; random fuzz with no hanging notes | **297,542 checks pass in CI** (Intel runner) |
 | The transport tests can fail: 10 deliberate mistakes in the clock | 9 caught locally; 1 harmless (the sequencer already ignores negative positions) |
-| Sound models (`DubSynth`): all 8 models x 3 sample rates (44.1 / 48 / 96 kHz): output finite, bounded, not silent; identical output for any host buffer size; model switching; hostile parameter values (NaN, out of range); event floods; the whole sequencer -> clock -> synth chain; pitch (A3 within 0.3 %, resampler within 0.002 %) | **9,268 checks pass locally** (g++, plus an AddressSanitizer / UBSan run); CI runs the same tests (see the run's annotations) |
+| Sound models (`DubSynth`): all 8 models x 3 sample rates (44.1 / 48 / 96 kHz): output finite, bounded, not silent; identical output for any host buffer size; model switching; hostile parameter values (NaN, out of range); event floods; the whole sequencer -> clock -> synth chain; pitch (A3 within 0.3 %, resampler within 0.002 %) | **9,268 checks pass in CI** (Intel runner, commit d3a428f, run 41143535268); also passed locally with g++ and an AddressSanitizer / UBSan run |
 | The sound-model tests can fail: deliberate mistakes in the synth | caught locally (checked by hand-made mutations) |
 | Pitch of the poly models and STRINGS | measured about 1 cent flat (poly) and about 2.4 cents flat (STRINGS) after the filter opens. Narti Live's unmodified firmware code shows the same offset with no resampler involved; the oscillator itself runs at exactly 220.0001 Hz. Not a tuning claim, only a bounds check |
 | ACID model vs the gen~ code of the Max devices | ported by hand in double precision; **not yet cross-checked against the original gen~ code** |
 | **How the models sound** (next to the module, the Max devices, or anything else) | **not checked: needs Bryn to listen** |
 | Model 6 | **CHIPTUNE stand-in**: the firmware's published slot 6. VHIKK is not in any published source |
-| Plug-in processor (fake host, no window): stopped = silent, plays, every model, sub, effects tails, free-run equals host at the same tempo, direct play, factory + user presets, MIDI export file, saved state, editor at 60-200 %, drag file | **passes locally** (Linux, g++); CI runs the same test |
-| Echo / reverb / width (`fx_test`): echo time at 3 sample rates and 3 tempos, ping-pong, stability at worst-case settings, reverb decay time within 5 % of the setting, level, width, buffer-size independence, NaN input | **299 checks pass locally**; CI runs it |
-| Direct play and MIDI export (`direct_test`): single note, chords with notes a few samples apart, held notes, five-note limit, ACID gate, repeatable export | **5,386 checks pass locally**; CI runs it |
-| Editor layout | looked at in a snapshot rendered on Linux; **not yet seen on a Mac** |
-| Drag a MIDI region into Logic, free-run feel, MIDI chords from Dotriaconta-tone, preset sounds | **not checked in Logic** |
-| Loads in Logic on the M4 Mac mini | **confirmed by Bryn (29 Oct 2026)** for the earlier silent build; not yet checked for this version |
-| Loads in Logic on the Intel Mac | **confirmed by Bryn (29 Oct 2026)** for the earlier silent build; not yet checked for this version |
-| Transport sync in a real Logic session, sound next to the module or the Max devices | **not checked** |
+| Plug-in processor (fake host, no window): stopped = silent, plays, every model, sub, effects tails, free-run equals host at the same tempo, direct play, factory + user presets, MIDI export file, saved state, editor at 60-200 %, drag file | **passes in CI** (Intel runner, commit d3a428f); also passed locally (Linux, g++) |
+| Echo / reverb / width (`fx_test`): echo time at 3 sample rates and 3 tempos, ping-pong, stability at worst-case settings, reverb decay time within 5 % of the setting, level, width, buffer-size independence, NaN input | **299 checks pass in CI** (commit d3a428f); also locally |
+| Direct play and MIDI export (`direct_test`): single note, chords with notes a few samples apart, held notes, five-note limit, ACID gate, repeatable export | **5,386 checks pass in CI** (commit d3a428f); also locally |
+| Editor layout | **confirmed by Bryn on a Mac (30 Oct 2026)**: looks right, resizes and stays in proportion |
+| Drag the MIDI box onto a Logic track | **works** (confirmed by Bryn, 30 Oct 2026) |
+| Free-run (host stopped) | **works** (confirmed by Bryn, 30 Oct 2026) |
+| "Play the notes directly" driven by a MIDI effect (Dotriaconta-tone, in the same track's MIDI FX slot) | **works** (confirmed by Bryn, 30 Oct 2026); he can use its different scales through it |
+| What the 11 factory presets sound like | **not checked**: they are starting points picked from what each control does in the code, not listened to |
+| Loads in Logic on the M4 Mac mini | **confirmed by Bryn (30 Oct 2026)** for the full build (commit d3a428f): loads and plays |
+| Loads in Logic on the Intel Mac | **confirmed by Bryn (30 Oct 2026)** for the full build (commit d3a428f): loads and plays |
+| Plays when Logic plays | **confirmed by Bryn (30 Oct 2026)**. How exactly the steps line up with Logic's grid was not measured in Logic (the clock itself is tested at sample level, see above) |
+| Sound next to the module or the Max devices | **not checked** |
+| About panel (ABOUT button): shows both licence notices (Narti Live, Emilie Gillet) verbatim, the credits and the version | text checked by the processor test in CI (it fails if either copyright line is missing); looked at in a snapshot rendered on Linux; **not yet seen on a Mac** |
+| Apple-silicon CI job ("Run workflow" button) | **never run**: normal pushes build on the Intel runner only; the plug-in is a universal binary and runs on Bryn's M4 Mac mini |
