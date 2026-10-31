@@ -14,6 +14,7 @@
 // Max-specific bits that make no sense in a plug-in are left out (outlets for number boxes, NEW button debounce,
 // the gen~ event-queue slot numbers).
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string>
@@ -22,6 +23,17 @@
 namespace dub {
 
 enum class Mode { Midi, Both };
+
+// The order the steps are played in (an addition to the original, which only plays forward). Forward is the default and
+// is exactly the original; every other order is a pure function of the song position and the seed, so a loop in the host
+// comes round the same way each time and a relocation lands on the same step as playing up to it.
+enum Direction
+{
+    DirForward, DirReverse, DirPendulum, DirPingPong, DirRandom, DirRandomNoRepeat, DirDrunk, DirChance,
+    kNumDirections
+};
+// The orders the Chance direction can pick from (index into Settings::dirWeight).
+enum ChanceMode { ChForward, ChReverse, ChPendulum, ChPingPong, ChRandom, ChDrunk, kNumChanceModes };
 
 // What the JavaScript sends out of its outlets.
 struct Event
@@ -50,7 +62,10 @@ struct Settings
     int voicing = 0;     // 0 DUB, 1 triads, 2 sevenths, 3 mixed, 4 DEEP
     int output = 0;      // Mode::Midi only: 0 chords, 1 acid line, 2 roots
     int density = 5;     // 0..16 steps that play
-    int length = 16;     // 1..16 pattern length ("Steps")
+    int length = 16;     // 1..64 pattern length ("Steps"); the original has 1..16, which is the first bar of 16 steps
+    int direction = 0;   // Direction (0 = forward = the original)
+    int dirWeight[kNumChanceModes] = { 100, 60, 40, 0, 20, 0 };   // Direction::Chance: relative chance of each order, 0..100
+    int runMin = 4, runMax = 16;                                   // Direction::Chance: steps an order is kept for (1..64)
     int rate = 4;        // 0..7 = 1/2 1/4 1/8 1/8T 1/16 1/16T 1/32 1/32T
     int octave = 3;      // 1..5
     double gate = 0.5;   // 0.05..2 of a step (Mode::Midi)
@@ -76,7 +91,9 @@ struct Chord
 class DubSequencer
 {
 public:
-    static constexpr int kNumSteps = 16;
+    static constexpr int kNumSteps = 16;            // steps in one bar of the pattern recipe (the original's whole pattern)
+    static constexpr int kSections = 4;             // bars: bar 1 is the original's pattern, bars 2-4 are new patterns from the same seed
+    static constexpr int kMaxSteps = kNumSteps * kSections;
     static constexpr int kGrid = 20;                // the original's clock runs every 20 ticks (480 per quarter)
     static constexpr int kDeepVoicing = 4;          // Voicing menu index of DEEP
 
@@ -92,6 +109,10 @@ public:
     void setOutput (double v);       // also releases held notes
     void setDensity (double v);
     void setSteps (double v);
+    void setDirection (double v);
+    void setDirWeight (int mode, double v);   // mode: ChanceMode
+    void setRunMin (double v);
+    void setRunMax (double v);
     void setRate (double v);
     void setOctave (double v);
     void setGate (double v);
@@ -114,13 +135,18 @@ public:
 
     // --- read access (editor display, tests) ---
     const Settings& settings() const { return S; }
-    const Pattern& pattern() const { return P; }
+    const Pattern& pattern() const { return sections_[0]; }                    // bar 1 (the original's pattern)
+    const Pattern& patternSection (int section) const { return sections_[(size_t) std::max (0, std::min (kSections - 1, section))]; }
+    // Which step plays at step count n (n = song position in ticks / ticks per step, from 0), for the current Steps / Direction.
+    int stepForIndex (long long n) const;
+    bool stepPlays (int step) const;                      // step 0..63: does it sound at the current Density
+    bool stepAccented (int step) const;
     void generate();                                       // rebuild the pattern from the current seed / melody
-    static std::string patternText (const Settings&, const Pattern&, int currentStep);
+    static std::string patternText (const Settings&, const Pattern&, int currentStep);   // one bar of 16
     static int rateTicks (int rate);                       // ticks (480 per quarter) per step for a Rate setting 0..7
     Chord buildChord (int degree, int voicing) const;
     int semitonesToDegrees (int semitones) const;
-    int monoNote (int degree, int step) const;
+    int monoNote (int degree, int step) const;             // step 0..63
     std::string chordName (const Chord&) const;
     static std::string noteName (int note);
 
@@ -138,7 +164,7 @@ private:
     int keyOffset() const;
     int pickDegree (int avoid);
     struct Acid { int note; bool slide; };
-    Acid acidNote (int degree, int stepIndex, int rank) const;
+    Acid acidNote (int degree, int step) const;            // step 0..63
     std::string deepName (const Chord&) const;
 
     // output
@@ -152,8 +178,9 @@ private:
     void fireStep (int st, double g, int rt);
     void setInt (int& field, double v, int lo, int hi, bool regen);
 
+    void generatePattern (Pattern& out, int section);
     Settings S;
-    Pattern P;
+    std::array<Pattern, kSections> sections_{};
     Mode mode_ = Mode::Midi;
     uint32_t rngState_ = 1;
     std::vector<Pending> pendingOffs_;

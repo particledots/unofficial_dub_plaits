@@ -38,7 +38,7 @@ jobs:
           rc=0
           step() { "$@" > step.log 2>&1; local r=$?; cat step.log;
                    if [ $r -ne 0 ]; then rc=$r; grep -n -i -E "FAIL|error|Assertion|Abort" step.log | head -15 | while IFS= read -r l; do echo "::error::$*: $l"; done; fi; }
-          step cmake --build build --target seq_crosscheck transport_test synth_test fx_test direct_test render_demos -j4
+          step cmake --build build --target seq_crosscheck transport_test synth_test fx_test direct_test direction_test render_demos -j4
           node --version
           [ $rc -eq 0 ] && { node tests/reference/ref_dump.js tests/scenarios.txt > expected.txt || rc=$?; }
           [ $rc -eq 0 ] && { ./build/seq_crosscheck tests/scenarios.txt > actual.txt || rc=$?; }
@@ -62,6 +62,8 @@ jobs:
           # Echo / reverb / width, and the MIDI-notes-play-directly logic and the pattern -> MIDI export.
           [ $rc -eq 0 ] && step ./build/fx_test && echo "::notice::$(tail -1 step.log) (runner $(uname -m))"
           [ $rc -eq 0 ] && step ./build/direct_test && echo "::notice::$(tail -1 step.log) (runner $(uname -m))"
+          # The additions to the original: Steps 17-64 and the order of the steps (forward / reverse / pendulum / ping-pong / random / drunk / chance).
+          [ $rc -eq 0 ] && step ./build/direction_test && echo "::notice::$(tail -1 step.log) (runner $(uname -m))"
           exit $rc
 
       - name: Build AU + VST3
@@ -106,7 +108,9 @@ jobs:
               the window resizes and keeps its proportions, and "Play the notes directly" driven by a MIDI effect works.
             Checked by automatic tests on GitHub: the sequencer gives exactly the same notes as the original Max for Live
               script (2,080 scenarios), the transport clock, every sound model (finite, bounded, not silent, any buffer size),
-              echo / reverb / width, direct play and the MIDI export.
+              echo / reverb / width, direct play and the MIDI export. (Steps 17-64 and the order of the steps are NOT in the
+              original script, so the script cannot check them: the tests only check that they are well-behaved, repeatable
+              and do what their names say. Nobody has listened to them yet.)
             NOT checked: how the sounds and the factory presets compare with the real module or the Max devices (nobody has
               listened side by side yet), the pitch is only checked to within 0.3 %, and model 6 is the CHIPTUNE stand-in:
               VHIKK is not in any published source.

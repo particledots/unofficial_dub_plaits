@@ -164,10 +164,11 @@ private:
     std::vector<Knob*> knobs;
     std::vector<Number*> numbers;
 
-    Choice model, root, scale, voicing, rate, echoTime, midiMode, exportBars, exportLen;
+    Choice model, root, scale, voicing, rate, echoTime, midiMode, exportBars, exportLen, direction;
     Knob harmonics, timbre, morph, envelope, resonance, drift, sub, volume;
     Knob echoMix, echoFb, echoTone, reverbMix, reverbDecay, width;
     Number density, steps, octave, seed, melody, freeBpm;
+    Number runMin, runMax, wFwd, wRev, wPend, wPing, wRand, wDrunk;
     juce::ToggleButton chords { "CHORDS" }, minorOnly { "MINOR CHORDS ONLY" }, freeRun { "FREE-RUN WHEN STOPPED" };
     std::unique_ptr<APVTS::ButtonAttachment> chordsAtt, minorAtt, freeRunAtt;
     juce::TextButton newPattern { "NEW PATTERN" }, newMelody { "NEW MELODY" }, ownMelody { "ORIGINAL MELODY" };
@@ -176,9 +177,9 @@ private:
     DragHandle dragMidi;
     std::unique_ptr<juce::FileChooser> chooser;
 
-    juce::Rectangle<int> stepArea, statusArea, presetNameArea;
-    int shownModel = -1, shownStep = -2, shownLength = -1, shownTranspose = 0;
-    unsigned shownOn = 0xffffffff, shownAccent = 0xffffffff;
+    juce::Rectangle<int> stepArea, statusArea, presetNameArea, orderNoteArea;
+    int shownModel = -1, shownStep = -2, shownLength = -1, shownTranspose = 0, shownDirection = -1;
+    uint64_t shownOn = ~(uint64_t) 0, shownAccent = ~(uint64_t) 0;
     bool shownPlaying = false, shownFree = false, shownDirect = false;
     float shownBpm = 0;
     juce::String shownPreset;
@@ -214,10 +215,22 @@ DubStabPanel::DubStabPanel (DubStabAudioProcessor& p) : proc (p)
     addChoice (rate, "rate", "RATE", { "1/2", "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T" });
 
     addNumber (density, "density", "DENSITY", "How many of the steps play.");
-    addNumber (steps, "steps", "STEPS", "Pattern length, 1 to 16 steps.");
+    addNumber (steps, "steps", "STEPS", "Pattern length, 1 to 64 steps. Steps 1-16 are the original's pattern; every further 16 steps is another bar of the same recipe from the same seed. Density counts the steps that play in each bar of 16.");
     addNumber (octave, "octave", "OCTAVE");
     addNumber (seed, "seed", "SEED", "The pattern. The same seed always gives the same pattern.");
     addNumber (melody, "melody", "MELODY", "0 = the pattern's own melody; any other number = a different melody on the same rhythm.");
+
+    addChoice (direction, "direction", "ORDER OF THE STEPS", { "Forward", "Reverse", "Pendulum", "Ping-pong", "Random", "Random (no repeats)", "Drunk walk", "Chance mix" },
+               "Forward = as the original. Reverse = last step first. Pendulum = up and back, the end steps once. Ping-pong = up and back, the end steps twice. Random = any step each time (repeatable from the seed). Random (no repeats) = every step once, then a new order. Drunk walk = one step left, one step right or stay. Chance mix = picks one of these by the chances below, keeps it for a run of steps, then picks again.");
+    addNumber (runMin, "run_min", "CHANCE: SHORTEST RUN", "Chance mix: an order is kept for at least this many steps.");
+    addNumber (runMax, "run_max", "CHANCE: LONGEST RUN", "Chance mix: an order is kept for at most this many steps.");
+    addNumber (wFwd, "dir_w_fwd", "FORWARD", "Chance mix: how likely forward is to be picked, compared with the others (0 = never). The order just finished is not picked again unless it is the only one with a chance.");
+    addNumber (wRev, "dir_w_rev", "REVERSE", "Chance mix: how likely reverse is to be picked, compared with the others (0 = never).");
+    addNumber (wPend, "dir_w_pend", "PENDULUM", "Chance mix: how likely pendulum is to be picked, compared with the others (0 = never).");
+    addNumber (wPing, "dir_w_ping", "PING-PONG", "Chance mix: how likely ping-pong is to be picked, compared with the others (0 = never).");
+    addNumber (wRand, "dir_w_rand", "RANDOM", "Chance mix: how likely random is to be picked, compared with the others (0 = never).");
+    addNumber (wDrunk, "dir_w_drunk", "DRUNK WALK", "Chance mix: how likely the drunk walk is to be picked, compared with the others (0 = never).");
+    for (auto* n : { &wFwd, &wRev, &wPend, &wPing, &wRand, &wDrunk }) n->slider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 40, 20);
 
     addToggle (chords, chordsAtt, "chords", "Off = single notes instead of chords.");
     addToggle (minorOnly, minorAtt, "minor_only", "Only the scale's minor and diminished chords.");
@@ -339,11 +352,18 @@ void DubStabPanel::timerCallback()
 {
     updateModelDependent();
     const auto& d = proc.display;
-    const unsigned on = d.onMask.load(), acc = d.accentMask.load();
-    const int len = d.length.load(), step = d.currentStep.load(), tr = d.transpose.load();
+    const uint64_t on = d.onMask.load(), acc = d.accentMask.load();
+    const int len = d.length.load(), step = d.currentStep.load(), tr = d.transpose.load(), dirn = d.direction.load();
     const bool playing = d.playing.load(), freeRunning = d.freeRunning.load(), direct = d.direct.load();
     const float bpm = d.bpm.load();
     const auto preset = proc.presetName();
+    if (dirn != shownDirection)
+    {
+        shownDirection = dirn;
+        const float a = dirn == dub::DirChance ? 1.0f : 0.35f;       // the chance controls only matter for Chance mix
+        for (auto* n : { &runMin, &runMax, &wFwd, &wRev, &wPend, &wPing, &wRand, &wDrunk }) { n->slider.setAlpha (a); n->label.setAlpha (a); }
+        repaint (orderNoteArea);
+    }
     if (on != shownOn || acc != shownAccent || len != shownLength || step != shownStep || playing != shownPlaying || tr != shownTranspose
         || freeRunning != shownFree || direct != shownDirect || std::fabs (bpm - shownBpm) > 0.05f || preset != shownPreset)
     {
@@ -390,13 +410,18 @@ void DubStabPanel::paint (juce::Graphics& g)
     g.fillRect (16, 188, 400, 1); g.fillRect (430, 188, 190, 1); g.fillRect (634, 188, 100, 1);
 
     // pattern
+    g.setColour (kDim);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawFittedText ("Run lengths and chances apply to Chance mix only: it picks an order by its chance, keeps it for a run of steps, then picks again.",
+                      orderNoteArea, juce::Justification::topLeft, 4);
     g.setColour (kPanel);
     g.fillRoundedRectangle (stepArea.expanded (6).toFloat(), 6.0f);
-    const int cell = stepArea.getWidth() / 16;
+    const int cell = stepArea.getWidth() / 16, gap = 3, rowH = (stepArea.getHeight() - 3 * gap) / 4;
     const float alpha = shownDirect ? 0.3f : 1.0f;
-    for (int i = 0; i < 16; ++i)
+    for (int i = 0; i < dub::DubSequencer::kMaxSteps; ++i)
     {
-        auto r = juce::Rectangle<int> (stepArea.getX() + i * cell, stepArea.getY(), cell - 4, stepArea.getHeight()).toFloat();
+        const int row = i / 16, col = i % 16;
+        auto r = juce::Rectangle<int> (stepArea.getX() + col * cell, stepArea.getY() + row * (rowH + gap), cell - 4, rowH).toFloat();
         const bool inPattern = i < shownLength;
         const bool isOn = (shownOn >> i) & 1u, isAcc = (shownAccent >> i) & 1u;
         g.setColour ((! inPattern ? juce::Colour (0xff262a30) : isOn ? (isAcc ? kAccent : kOn) : juce::Colour (0xff343a42)).withAlpha (alpha));
@@ -410,7 +435,7 @@ void DubStabPanel::paint (juce::Graphics& g)
     g.setColour (kDim);
     g.setFont (juce::FontOptions (11.0f));
     g.drawText (shownDirect ? "Pattern off: the MIDI notes play the sound directly."
-                            : "blue = plays, orange = plays accented, grey = rest.  Density sets how many steps play.",
+                            : "blue = plays, orange = plays accented, grey = rest.  Each row is a bar of 16 steps; Steps 1-16 use the first row.",
                 stepArea.getX(), stepArea.getBottom() + 10, stepArea.getWidth(), 14, juce::Justification::centredLeft);
 
     g.drawFittedText ("Version " + juce::String (dub::versionString()) +
@@ -500,9 +525,31 @@ void DubStabPanel::resized()
     freeBpm.label.setBounds (left + cw + 12 + 222, y6, cw, 14);
     freeBpm.slider.setBounds (left + cw + 12 + 222, y6 + 16, cw, 26);
 
-    // row 7: the pattern, and the MIDI file
-    const int y7 = 526;
-    stepArea = { left, y7, 16 * 33, 34 };
+    // row 7: the order of the steps
+    const int y7a = 520;
+    direction.label.setBounds (left, y7a, cw, 14);
+    direction.box.setBounds (left, y7a + 16, cw, 26);
+    runMin.label.setBounds (left + (cw + 12), y7a, cw, 14);
+    runMin.slider.setBounds (left + (cw + 12), y7a + 16, cw, 26);
+    runMax.label.setBounds (left + 2 * (cw + 12), y7a, cw, 14);
+    runMax.slider.setBounds (left + 2 * (cw + 12), y7a + 16, cw, 26);
+    orderNoteArea = { left + 3 * (cw + 12), y7a, cw, 50 };
+    // row 8: the chances
+    const int y7b = 570;
+    {
+        const int ww = (fullW - 5 * 10) / 6;
+        int x = left;
+        for (auto* n : { &wFwd, &wRev, &wPend, &wPing, &wRand, &wDrunk })
+        {
+            n->label.setBounds (x, y7b, ww, 14);
+            n->slider.setBounds (x, y7b + 16, ww, 26);
+            x += ww + 10;
+        }
+    }
+
+    // row 9: the pattern, and the MIDI file
+    const int y7 = 634;
+    stepArea = { left, y7, 16 * 33, 84 };
     dragMidi.setBounds (right - 316, y7, 150, 34);
     saveMidi.setBounds (right - 158, y7, 158, 34);
     exportBars.label.setBounds (right - 316, y7 + 50, 150, 14);

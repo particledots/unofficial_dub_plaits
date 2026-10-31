@@ -124,7 +124,7 @@ int main()
         std::printf ("playing: peak %.3f\n", played.peak);
         CHECK (p->display.playing.load(), "display: playing");
         CHECK (p->display.onMask.load() != 0, "display: some steps play");
-        CHECK (__builtin_popcount (p->display.onMask.load()) == 5, "display: density 5 gives 5 steps");
+        CHECK (__builtin_popcountll (p->display.onMask.load() & 0xffffu) == 5, "display: density 5 gives 5 steps in the first bar");
 
         // stop again -> silence after the tail
         host.playing = false;
@@ -521,6 +521,81 @@ int main()
             std::printf ("editor snapshot: %s\n", out.getFullPathName().toRawUTF8());
         }
         ed.reset();
+    }
+
+    {   // --- 64 steps and the order of the steps ---
+        FakeHost host; auto p = make (host, sr, 512);
+        CHECK ((int) *p->apvts.getRawParameterValue ("direction") == 0, "direction defaults to Forward");
+        CHECK ((int) *p->apvts.getRawParameterValue ("steps") == 16, "steps default to 16");
+        setParam (*p, "steps", 64); setParam (*p, "density", 5); setParam (*p, "rate", 4);
+        render (*p, host, sr, 512, 0.1);
+        CHECK (p->display.length.load() == 64, "display: 64 steps");
+        CHECK (__builtin_popcountll (p->display.onMask.load()) == 20, "display: density 5 plays 5 steps in each of the 4 bars");
+        CHECK ((p->display.onMask.load() >> 16) != 0 && (p->display.onMask.load() >> 48) != 0, "display: bars 2 and 4 have steps");
+        setParam (*p, "steps", 100);
+        render (*p, host, sr, 512, 0.1);
+        CHECK (p->display.length.load() == 64, "steps stop at 64");
+
+        // the step marker follows the order (1/16 = 0.25 quarter notes per step)
+        host.playing = true;
+        auto stepAt = [&] (int n)
+        {
+            host.ppq = 0.25 * n + 0.01;
+            render (*p, host, sr, 512, 512.0 / sr);
+            host.ppq = 0.25 * n + 0.01;                    // render() moved it on: put it back so the next call is exact
+            return p->display.currentStep.load();
+        };
+        setParam (*p, "steps", 8);
+        CHECK (stepAt (0) == 0 && stepAt (3) == 3 && stepAt (9) == 1, "forward: the marker is on step n mod 8");
+        setParam (*p, "direction", 1);
+        CHECK (stepAt (0) == 7 && stepAt (1) == 6 && stepAt (7) == 0 && stepAt (8) == 7, "reverse: 8, 7, 6 ...");
+        setParam (*p, "direction", 2);
+        CHECK (stepAt (0) == 0 && stepAt (7) == 7 && stepAt (8) == 6 && stepAt (13) == 1 && stepAt (14) == 0, "pendulum: up and back");
+        setParam (*p, "direction", 7);
+        setParam (*p, "seed", 77); setParam (*p, "steps", 24);
+        setParam (*p, "run_min", 2); setParam (*p, "run_max", 7);
+        dub::DubSequencer ref; ref.setSeed (77); ref.setSteps (24); ref.setDirection (dub::DirChance); ref.setRunMin (2); ref.setRunMax (7);
+        for (int m = 0; m < dub::kNumChanceModes; ++m) ref.setDirWeight (m, (int) *p->apvts.getRawParameterValue (
+            m == 0 ? "dir_w_fwd" : m == 1 ? "dir_w_rev" : m == 2 ? "dir_w_pend" : m == 3 ? "dir_w_ping" : m == 4 ? "dir_w_rand" : "dir_w_drunk"));
+        bool same = true;
+        for (int n : { 0, 1, 2, 5, 11, 40, 100, 255, 256, 300 }) same = same && stepAt (n) == ref.stepForIndex (n);
+        CHECK (same, "chance mix: the marker is on the step the sequencer plays");
+        host.playing = false;
+
+        // the exported MIDI follows the settings
+        setParam (*p, "direction", 1); setParam (*p, "steps", 64);
+        const auto es = p->exportSettings();
+        CHECK (es.direction == 1 && es.steps == 64 && es.runMin == 2 && es.runMax == 7, "export settings carry steps, direction and the chance settings");
+        auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("dub_export_dir_test.mid");
+        CHECK (p->writePatternMidi (file), "MIDI file with 64 steps and reverse order written");
+        file.deleteFile();
+
+        // a factory preset puts the order back to Forward
+        setParam (*p, "direction", 4);
+        p->applyFactoryPreset (1);
+        CHECK ((int) *p->apvts.getRawParameterValue ("direction") == 0, "a preset sets the order to Forward");
+
+        // state round trip, and a project saved before these settings existed
+        setParam (*p, "direction", 6); setParam (*p, "steps", 48); setParam (*p, "dir_w_rand", 77); setParam (*p, "run_max", 31);
+        juce::MemoryBlock state; p->getStateInformation (state);
+        auto q = make (host, sr, 512);
+        q->setStateInformation (state.getData(), (int) state.getSize());
+        CHECK ((int) *q->apvts.getRawParameterValue ("direction") == 6 && (int) *q->apvts.getRawParameterValue ("steps") == 48
+               && (int) *q->apvts.getRawParameterValue ("dir_w_rand") == 77 && (int) *q->apvts.getRawParameterValue ("run_max") == 31, "state: direction, steps and chances come back");
+        if (auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize()))
+        {
+            const char* added[] = { "direction", "dir_w_fwd", "dir_w_rev", "dir_w_pend", "dir_w_ping", "dir_w_rand", "dir_w_drunk", "run_min", "run_max" };
+            for (int i = xml->getNumChildElements() - 1; i >= 0; --i)
+                if (auto* c = xml->getChildElement (i))
+                    for (auto* id : added) if (c->getStringAttribute ("id") == id) { xml->removeChildElement (c, true); break; }
+            juce::MemoryBlock old; juce::AudioProcessor::copyXmlToBinary (*xml, old);
+            auto r = make (host, sr, 512);
+            r->setStateInformation (old.getData(), (int) old.getSize());
+            CHECK ((int) *r->apvts.getRawParameterValue ("steps") == 48, "old project: its own settings load");
+            CHECK ((int) *r->apvts.getRawParameterValue ("direction") == 0, "old project: plays Forward");
+            CHECK ((int) *r->apvts.getRawParameterValue ("dir_w_fwd") == 100 && (int) *r->apvts.getRawParameterValue ("run_min") == 4, "old project: chance settings at their defaults");
+        }
+        else CHECK (false, "state can be read as XML");
     }
 
     {   // --- the editor opens and closes, buttons work ---

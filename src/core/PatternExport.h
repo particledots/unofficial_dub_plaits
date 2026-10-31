@@ -6,6 +6,7 @@
 // JUCE-free.
 #pragma once
 #include <vector>
+#include "DubSequencer.h"
 
 namespace dub {
 
@@ -19,6 +20,9 @@ struct ExportSettings
     int transposeNote = -1;     // the MIDI note currently transposing the pattern (60 = none), -1 = no note played
     double gate = 0.5;          // note length as a fraction of one step (0.05 .. 2)
     int bars = 4;               // 4/4 bars from song position 0
+    int direction = 0;          // Direction: the order the steps are played in (0 = forward)
+    int dirWeight[kNumChanceModes] = { 100, 60, 40, 0, 20, 0 };   // Direction::Chance
+    int runMin = 4, runMax = 16;                                   // Direction::Chance
 };
 
 struct ExportNote
@@ -27,6 +31,7 @@ struct ExportNote
     long long endTick = 0;
     int note = 60;
     int velocity = 90;
+    bool operator== (const ExportNote& o) const { return startTick == o.startTick && endTick == o.endTick && note == o.note && velocity == o.velocity; }
 };
 
 // Notes sorted by start tick (then pitch). Every note ends at or before bars * 1920.

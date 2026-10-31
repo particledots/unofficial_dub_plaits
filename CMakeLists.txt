@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(UnofficialDubStabPlaits VERSION 0.2.0)
+project(UnofficialDubStabPlaits VERSION 0.3.0)
 
 # The About panel shows the credits and licence notices. The text is read from licenses/ and LICENSE here, at configure time,
 # so the panel can never differ from the files that ship in the zip.
@@ -119,6 +119,10 @@ target_link_libraries(fx_test PRIVATE dub_core)
 # --- Direct play (notes -> stabs), the synth's direct chords and sub-bass output, the pattern exporter, JUCE-free:  build/direct_test ---
 add_executable(direct_test EXCLUDE_FROM_ALL tests/direct_test.cpp)
 target_link_libraries(direct_test PRIVATE dub_core)
+
+# --- Steps 17-64 and the Direction orders (the additions to the original), JUCE-free:  build/direction_test ---
+add_executable(direction_test EXCLUDE_FROM_ALL tests/direction_test.cpp)
+target_link_libraries(direction_test PRIVATE dub_core)
 
 # --- Listening aid: one WAV per sound model played by the real sequencer (CI uploads them):  build/render_demos <folder> ---
 add_executable(render_demos EXCLUDE_FROM_ALL tools/render_demos.cpp)

@@ -156,9 +156,11 @@ int DubSequencer::semitonesToDegrees (int st) const
     return best + 7 * o;
 }
 
-DubSequencer::Acid DubSequencer::acidNote (int degree, int stepIndex, int rank) const
+DubSequencer::Acid DubSequencer::acidNote (int degree, int step) const
 {
     degree = allowedDegree (degree);
+    const Pattern& P = sections_[(size_t) (step / kNumSteps)];
+    const int stepIndex = step % kNumSteps, rank = P.rank[(size_t) stepIndex];
     const int h = (rank * 5 + stepIndex * 3 + P.acidShift[(size_t) stepIndex]) & 7;
     const int d = degree + ACID_OFFSETS[h];
     const int base = 12 * (S.octave + 2) + keyOffset();     // one octave above the chords
@@ -169,7 +171,7 @@ DubSequencer::Acid DubSequencer::acidNote (int degree, int stepIndex, int rank) 
 int DubSequencer::monoNote (int degree, int st) const
 {
     degree = allowedDegree (degree);
-    return 12 * (S.octave + 1) + keyOffset() + scaleNote (degree + P.mono[(size_t) st]);
+    return 12 * (S.octave + 1) + keyOffset() + scaleNote (degree + sections_[(size_t) (st / kNumSteps)].mono[(size_t) (st % kNumSteps)]);
 }
 
 std::string DubSequencer::noteName (int n)
@@ -239,9 +241,8 @@ int DubSequencer::pickDegree (int avoid)
 }
 
 // Same recipe as the firmware: 1, 2 or 4 chords per pattern, mostly held.
-void DubSequencer::generate()
+void DubSequencer::generatePattern (Pattern& P, int section)
 {
-    seedRandom (S.seed);
     const double r = rand01();
     const int segments = r < 0.35 ? 1 : (r < 0.75 ? 2 : 4);
     int chord[4] = {};
@@ -290,7 +291,7 @@ void DubSequencer::generate()
     // Mono line (CHORDS off): the firmware's random walk over two octaves of the scale, starting from each
     // step's chord root. Melody 0 = the line that comes with the pattern; other melody seeds give new lines
     // (and new ACID lines) over the same chords and rhythm.
-    if (S.melody) seedRandom ((double) S.seed * 7919.0 + (double) S.melody * 104729.0 + 17.0);
+    if (S.melody) seedRandom ((double) S.seed * 7919.0 + (double) S.melody * 104729.0 + 17.0 + (double) section * 1299709.0);
     for (int i = 0; i < kNumSteps; ++i) P.acidShift[(size_t) i] = S.melody ? (int) std::floor (rand01() * 8) : 0;
     int n = rand01() < 0.5 ? 0 : 7;
     for (int i = 0; i < kNumSteps; ++i)
@@ -309,6 +310,19 @@ void DubSequencer::generate()
         if (n < 0) n = 1;
         if (n > 13) n = 12;
         P.mono[(size_t) i] = n;
+    }
+}
+
+// Bar 1 is the original's pattern (same random numbers, so the cross-check against dubstab.js still applies to it). Bars 2-4,
+// used by Steps 17-64, are further patterns of the same recipe with their own random numbers from the same seed.
+void DubSequencer::generate()
+{
+    seedRandom (S.seed);
+    generatePattern (sections_[0], 0);
+    for (int k = 1; k < kSections; ++k)
+    {
+        seedRandom ((double) S.seed * 131.0 + (double) k * 99991.0 + 500009.0);
+        generatePattern (sections_[(size_t) k], k);
     }
     showPattern (-1);
 }
@@ -341,7 +355,12 @@ void DubSequencer::push (Event e)
 void DubSequencer::showPattern (int current)
 {
     if (! emitText) return;
-    Event e; e.kind = Event::PatternText; e.text = patternText (S, P, current);
+    // The text shows one bar of 16: the bar the current step is in (bar 1 when nothing is running).
+    const int section = current >= 0 ? std::min (kSections - 1, current / kNumSteps) : 0;
+    Settings shown = S;
+    if (S.length > kNumSteps) shown.length = std::max (1, std::min (kNumSteps, S.length - section * kNumSteps));
+    Event e; e.kind = Event::PatternText;
+    e.text = patternText (shown, sections_[(size_t) section], current >= 0 ? current % kNumSteps : -1);
     push (std::move (e));
 }
 
@@ -384,6 +403,155 @@ void DubSequencer::genEvent (int type, int note, int vel)
     push (e);
 }
 
+// ------------------------------------------------------------------ order of the steps
+
+namespace {
+// A small integer hash (lowbias32-style) used for every "random" order, so they depend only on the seed and the position.
+uint32_t mix32 (uint32_t x)
+{
+    x ^= x >> 16; x *= 0x7feb352dU;
+    x ^= x >> 15; x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return x;
+}
+uint32_t hash4 (uint32_t a, uint32_t b, uint32_t c, uint32_t d)
+{
+    uint32_t h = mix32 (a + 0x9E3779B9U);
+    h = mix32 (h ^ (b + 0x85EBCA6BU));
+    h = mix32 (h ^ (c + 0xC2B2AE35U));
+    return mix32 (h ^ (d + 0x27D4EB2FU));
+}
+constexpr long long kEpoch = 256;       // Drunk / Chance restart from a fresh position every 256 steps, so any step can be found quickly
+} // namespace
+
+int DubSequencer::stepForIndex (long long n) const
+{
+    const int L = std::max (1, std::min (kMaxSteps, S.length));
+    if (n < 0) n = 0;
+    const uint32_t seed = (uint32_t) S.seed;
+    const uint32_t nLo = (uint32_t) (n & 0xffffffffLL), nHi = (uint32_t) ((unsigned long long) n >> 32);
+    switch (S.direction)
+    {
+        case DirReverse:
+            return L - 1 - (int) (n % L);
+        case DirPendulum:           // up, then back down, the two end steps played once each time round
+        {
+            if (L < 2) return 0;
+            const long long period = 2LL * L - 2;
+            const int m = (int) (n % period);
+            return m < L ? m : (int) (period - m);
+        }
+        case DirPingPong:           // up, then back down, the two end steps played twice
+        {
+            const int m = (int) (n % (2LL * L));
+            return m < L ? m : 2 * L - 1 - m;
+        }
+        case DirRandom:
+            return (int) (hash4 (seed, nLo, nHi, 1) % (uint32_t) L);
+        case DirRandomNoRepeat:     // every step once, in a new order each time round
+        {
+            int perm[kMaxSteps];
+            for (int i = 0; i < L; ++i) perm[i] = i;
+            const uint32_t cycleLo = (uint32_t) ((n / L) & 0xffffffffLL);
+            for (int i = L - 1; i > 0; --i)
+            {
+                const int j = (int) (hash4 (seed, cycleLo, (uint32_t) i, 2) % (uint32_t) (i + 1));
+                std::swap (perm[i], perm[j]);
+            }
+            return perm[n % L];
+        }
+        case DirDrunk:              // each step moves one to the left, one to the right, or stays
+        {
+            const uint32_t epoch = (uint32_t) ((n / kEpoch) & 0xffffffffLL);
+            const int m = (int) (n % kEpoch);
+            int c = (int) (hash4 (seed, epoch, 0, 3) % (uint32_t) L);
+            for (int i = 1; i <= m; ++i)
+            {
+                const uint32_t r = hash4 (seed, epoch, (uint32_t) i, 4) % 10;
+                c += r < 4 ? -1 : (r < 8 ? 1 : 0);
+                c = ((c % L) + L) % L;
+            }
+            return c;
+        }
+        case DirChance:             // runs of random length, each in an order picked by the weights
+        {
+            const uint32_t epoch = (uint32_t) ((n / kEpoch) & 0xffffffffLL);
+            const int m = (int) (n % kEpoch);
+            auto draw = [&] (uint32_t k) { return hash4 (seed, epoch, k, 5); };
+            const int lo = std::max (1, std::min (S.runMin, S.runMax)), hi = std::max (S.runMin, S.runMax);
+            uint32_t k = 0;
+            int c = (int) (draw (k++) % (uint32_t) L), pdir = 1, mode = -1, remaining = 0;
+            for (int i = 0; i <= m; ++i)
+            {
+                if (remaining <= 0)
+                {
+                    // pick the next order; the one just finished is left out unless it is the only one with a weight
+                    int total = 0, others = 0;
+                    for (int q = 0; q < kNumChanceModes; ++q) { total += S.dirWeight[q]; if (q != mode) others += S.dirWeight[q]; }
+                    const int usable = others > 0 ? others : total;
+                    int pick = ChForward;
+                    if (usable > 0)
+                    {
+                        int r = (int) (draw (k++) % (uint32_t) usable);
+                        for (int q = 0; q < kNumChanceModes; ++q)
+                        {
+                            const int w = (others > 0 && q == mode) ? 0 : S.dirWeight[q];
+                            if (r < w) { pick = q; break; }
+                            r -= w;
+                        }
+                    }
+                    mode = pick;
+                    remaining = lo + (hi > lo ? (int) (draw (k++) % (uint32_t) (hi - lo + 1)) : 0);
+                }
+                if (i > 0)
+                {
+                    switch (mode)
+                    {
+                        case ChReverse:  c = (c + L - 1) % L; break;
+                        case ChPendulum:
+                            if (L > 1)
+                            {
+                                c += pdir;
+                                if (c >= L) { c = L - 2; pdir = -1; }
+                                else if (c < 0) { c = 1; pdir = 1; }
+                            }
+                            break;
+                        case ChPingPong:
+                            if (c + pdir >= L || c + pdir < 0) pdir = -pdir; else c += pdir;
+                            break;
+                        case ChRandom:   c = (int) (draw (k++) % (uint32_t) L); break;
+                        case ChDrunk:
+                        {
+                            const uint32_t r = draw (k++) % 10;
+                            c += r < 4 ? -1 : (r < 8 ? 1 : 0);
+                            c = ((c % L) + L) % L;
+                            break;
+                        }
+                        default:         c = (c + 1) % L; break;
+                    }
+                }
+                --remaining;
+            }
+            return c;
+        }
+        case DirForward:
+        default:
+            return (int) (n % L);
+    }
+}
+
+bool DubSequencer::stepPlays (int step) const
+{
+    step = std::max (0, std::min (kMaxSteps - 1, step));
+    return sections_[(size_t) (step / kNumSteps)].rank[(size_t) (step % kNumSteps)] < S.density;
+}
+
+bool DubSequencer::stepAccented (int step) const
+{
+    step = std::max (0, std::min (kMaxSteps - 1, step));
+    return sections_[(size_t) (step / kNumSteps)].accent[(size_t) (step % kNumSteps)] != 0;
+}
+
 // ------------------------------------------------------------------ clock
 
 void DubSequencer::ticks (double t)
@@ -398,24 +566,25 @@ void DubSequencer::ticks (double t)
     const long long gi = (long long) g;
     if (gi % rt != 0) return;
     const long long n = gi / rt;
-    const int len = std::max (1, std::min (16, S.length));
-    fireStep ((int) (n % len), g, rt);
+    fireStep (stepForIndex (n), g, rt);
 }
 
 void DubSequencer::fireStep (int st, double g, int rt)
 {
-    const bool plays = P.rank[(size_t) st] < S.density;
+    const Pattern& P = sections_[(size_t) (st / kNumSteps)];
+    const int si = st % kNumSteps;                       // step within its bar of 16
+    const bool plays = P.rank[(size_t) si] < S.density;
     showPattern (st);
     if (! plays) { lastTickFired_ = false; return; }
-    const int accent = P.accent[(size_t) st];
-    const int degree = P.degree[(size_t) st] + S.transpose;
-    const Chord c = buildChord (degree, P.voicing[(size_t) st]);
+    const int accent = P.accent[(size_t) si];
+    const int degree = P.degree[(size_t) si] + S.transpose;
+    const Chord c = buildChord (degree, P.voicing[(size_t) si]);
     const int vel = accent ? 127 : 90;
     const bool useAcid = (mode_ == Mode::Both) ? (S.model == 7) : (S.output == 1);
     auto text = [&] (const std::string& s) { if (emitText) { Event e; e.kind = Event::ChordText; e.text = s; push (std::move (e)); } };
     if (useAcid)
     {
-        const Acid a = acidNote (degree, st, P.rank[(size_t) st]);
+        const Acid a = acidNote (degree, st);
         const bool slide = a.slide && lastTickFired_;
         const double gateTicks = rt * (slide ? 1.05 : 0.55);
         if (mode_ == Mode::Midi)
@@ -494,7 +663,14 @@ void DubSequencer::setMinor (double v) { setInt (S.minor, v, 0, 1, true); }
 void DubSequencer::setVoicing (double v) { setInt (S.voicing, v, 0, 4, true); }
 void DubSequencer::setOutput (double v) { setInt (S.output, v, 0, 2, false); allOff(); }
 void DubSequencer::setDensity (double v) { setInt (S.density, v, 0, 16, false); }
-void DubSequencer::setSteps (double v) { setInt (S.length, v, 1, 16, false); }
+void DubSequencer::setSteps (double v) { setInt (S.length, v, 1, kMaxSteps, false); }
+void DubSequencer::setDirection (double v) { setInt (S.direction, v, 0, kNumDirections - 1, false); }
+void DubSequencer::setDirWeight (int mode, double v)
+{
+    if (mode >= 0 && mode < kNumChanceModes) setInt (S.dirWeight[mode], v, 0, 100, false);
+}
+void DubSequencer::setRunMin (double v) { setInt (S.runMin, v, 1, kMaxSteps, false); }
+void DubSequencer::setRunMax (double v) { setInt (S.runMax, v, 1, kMaxSteps, false); }
 void DubSequencer::setRate (double v) { setInt (S.rate, v, 0, 7, false); }
 void DubSequencer::setOctave (double v) { setInt (S.octave, v, 1, 5, false); }
 void DubSequencer::setGate (double v) { S.gate = std::max (0.05, std::min (2.0, v)); }

@@ -58,7 +58,19 @@ APVTS::ParameterLayout DubStabAudioProcessor::createLayout()
     choice ("voicing", "Voicing", { "Dub", "Triads", "Sevenths", "Mixed", "Deep" }, 0);
     toggle ("chords", "Chords", true);
     num ("density", "Density", 0, 16, 5);
-    num ("steps", "Steps", 1, 16, 16);
+    num ("steps", "Steps", 1, 64, 16);
+    choice ("direction", "Direction", { "Forward", "Reverse", "Pendulum", "Ping-pong", "Random", "Random (no repeats)", "Drunk walk", "Chance mix" }, 0);
+    {
+        dub::Settings d;      // the defaults of the sequencer
+        num ("dir_w_fwd", "Chance: Forward", 0, 100, d.dirWeight[dub::ChForward]);
+        num ("dir_w_rev", "Chance: Reverse", 0, 100, d.dirWeight[dub::ChReverse]);
+        num ("dir_w_pend", "Chance: Pendulum", 0, 100, d.dirWeight[dub::ChPendulum]);
+        num ("dir_w_ping", "Chance: Ping-pong", 0, 100, d.dirWeight[dub::ChPingPong]);
+        num ("dir_w_rand", "Chance: Random", 0, 100, d.dirWeight[dub::ChRandom]);
+        num ("dir_w_drunk", "Chance: Drunk walk", 0, 100, d.dirWeight[dub::ChDrunk]);
+        num ("run_min", "Chance: Shortest run", 1, 64, d.runMin);
+        num ("run_max", "Chance: Longest run", 1, 64, d.runMax);
+    }
     choice ("rate", "Rate", { "1/2", "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T" }, 4);
     num ("octave", "Octave", 1, 5, 3);
     num ("seed", "Seed", 0, 99999, 1);
@@ -88,6 +100,10 @@ DubStabAudioProcessor::DubStabAudioProcessor()
     pRoot = get ("root"); pScale = get ("scale"); pMinor = get ("minor_only"); pVoicing = get ("voicing");
     pChords = get ("chords"); pDensity = get ("density"); pSteps = get ("steps"); pRate = get ("rate");
     pOctave = get ("octave"); pSeed = get ("seed"); pMelody = get ("melody");
+    pDirection = get ("direction");
+    pDirW[dub::ChForward] = get ("dir_w_fwd"); pDirW[dub::ChReverse] = get ("dir_w_rev"); pDirW[dub::ChPendulum] = get ("dir_w_pend");
+    pDirW[dub::ChPingPong] = get ("dir_w_ping"); pDirW[dub::ChRandom] = get ("dir_w_rand"); pDirW[dub::ChDrunk] = get ("dir_w_drunk");
+    pRunMin = get ("run_min"); pRunMax = get ("run_max");
     pMidiMode = get ("midi_mode"); pFreeRun = get ("free_run"); pFreeBpm = get ("free_bpm");
     pExportBars = get ("export_bars"); pExportLen = get ("export_len");
     seq.setMode (dub::Mode::Both);
@@ -155,6 +171,9 @@ void DubStabAudioProcessor::applySequencerParams()
     seq.setRate (pRate->load()); seq.setOctave (pOctave->load());
     seq.setVoicing (pVoicing->load());
     seq.setSeed (pSeed->load()); seq.setMelody (pMelody->load());
+    seq.setDirection (pDirection->load());
+    for (int m = 0; m < dub::kNumChanceModes; ++m) seq.setDirWeight (m, pDirW[m]->load());
+    seq.setRunMin (pRunMin->load()); seq.setRunMax (pRunMax->load());
 }
 
 void DubStabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -275,16 +294,16 @@ void DubStabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     hostAbs += n;
 
     // ---- for the editor ----
-    const auto& P = seq.pattern();
     const auto& S = seq.settings();
-    unsigned on = 0, acc = 0;
-    for (int i = 0; i < 16; ++i)
+    uint64_t on = 0, acc = 0;
+    for (int i = 0; i < dub::DubSequencer::kMaxSteps; ++i)
     {
-        if (P.rank[(size_t) i] < S.density) on |= 1u << i;
-        if (P.accent[(size_t) i]) acc |= 1u << i;
+        if (seq.stepPlays (i)) on |= (uint64_t) 1 << i;
+        if (seq.stepAccented (i)) acc |= (uint64_t) 1 << i;
     }
     display.onMask.store (on); display.accentMask.store (acc);
-    display.length.store (std::clamp (S.length, 1, 16));
+    display.length.store (std::clamp (S.length, 1, dub::DubSequencer::kMaxSteps));
+    display.direction.store (S.direction);
     display.transpose.store (S.transpose);
     display.bpm.store ((float) hb.bpm);
     display.direct.store (direct);
@@ -294,7 +313,7 @@ void DubStabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     if (running && hb.ppqStart >= 0)
     {
         const long long step = (long long) std::floor (hb.ppqStart * 480.0 / dub::DubSequencer::rateTicks (S.rate));
-        display.currentStep.store ((int) (step % std::clamp (S.length, 1, 16)));
+        display.currentStep.store (seq.stepForIndex (step));
     }
     else display.currentStep.store (-1);
 }
@@ -358,6 +377,9 @@ dub::ExportSettings DubStabAudioProcessor::exportSettings() const
     s.voicing = (int) std::lround (pVoicing->load());
     s.density = (int) std::lround (pDensity->load());
     s.steps = (int) std::lround (pSteps->load());
+    s.direction = (int) std::lround (pDirection->load());
+    for (int m = 0; m < dub::kNumChanceModes; ++m) s.dirWeight[m] = (int) std::lround (pDirW[m]->load());
+    s.runMin = (int) std::lround (pRunMin->load()); s.runMax = (int) std::lround (pRunMax->load());
     s.rate = (int) std::lround (pRate->load());
     s.octave = (int) std::lround (pOctave->load());
     s.seed = (int) std::lround (pSeed->load());

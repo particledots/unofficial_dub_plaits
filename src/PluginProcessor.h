@@ -49,9 +49,10 @@ public:
     // What the editor shows (written by the audio thread, read by the editor's timer).
     struct Display
     {
-        std::atomic<unsigned> onMask { 0 };       // bit i: step i plays
-        std::atomic<unsigned> accentMask { 0 };   // bit i: step i is accented
+        std::atomic<uint64_t> onMask { 0 };       // bit i: step i plays (steps 0..63 = four bars of 16)
+        std::atomic<uint64_t> accentMask { 0 };   // bit i: step i is accented
         std::atomic<int> length { 16 };
+        std::atomic<int> direction { 0 };         // the order the steps are played in (dub::Direction)
         std::atomic<int> currentStep { -1 };      // -1 when nothing is running
         std::atomic<bool> playing { false };      // the sequencer runs (host transport or free-running)
         std::atomic<bool> freeRunning { false };  // ... on its own clock because the host is stopped
@@ -110,6 +111,8 @@ private:
     std::atomic<float>* pRoot; std::atomic<float>* pScale; std::atomic<float>* pMinor; std::atomic<float>* pVoicing;
     std::atomic<float>* pChords; std::atomic<float>* pDensity; std::atomic<float>* pSteps; std::atomic<float>* pRate;
     std::atomic<float>* pOctave; std::atomic<float>* pSeed; std::atomic<float>* pMelody;
+    std::atomic<float>* pDirection; std::atomic<float>* pDirW[dub::kNumChanceModes];
+    std::atomic<float>* pRunMin; std::atomic<float>* pRunMax;
     std::atomic<float>* pMidiMode; std::atomic<float>* pFreeRun; std::atomic<float>* pFreeBpm;
     std::atomic<float>* pExportBars; std::atomic<float>* pExportLen;
 

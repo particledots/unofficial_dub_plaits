@@ -5,7 +5,7 @@
 
 class DubStabPanel;
 
-// The window: a fixed-size panel (900 x 670 units) scaled to whatever size the user drags the window to.
+// The window: a fixed-size panel (900 x 780 units) scaled to whatever size the user drags the window to.
 class DubStabEditor : public juce::AudioProcessorEditor
 {
 public:
@@ -14,7 +14,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    static constexpr int kBaseWidth = 900, kBaseHeight = 670;
+    static constexpr int kBaseWidth = 900, kBaseHeight = 780;
 
     // What dragging from the DRAG MIDI box would hand to the host (the file is written now). For the tests.
     juce::File makeDragFile();

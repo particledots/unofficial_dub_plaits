@@ -14,6 +14,9 @@ std::vector<ExportNote> renderPatternNotes (const ExportSettings& s)
     seq.setRoot (s.root); seq.setScale (s.scale); seq.setMinor (s.minor); seq.setVoicing (s.voicing);
     seq.setDensity (s.density); seq.setSteps (s.steps); seq.setRate (s.rate); seq.setOctave (s.octave);
     seq.setSeed (s.seed); seq.setMelody (s.melody);
+    seq.setDirection (s.direction);
+    for (int m = 0; m < kNumChanceModes; ++m) seq.setDirWeight (m, s.dirWeight[m]);
+    seq.setRunMin (s.runMin); seq.setRunMax (s.runMax);
     seq.setChords (s.chords);
     seq.setGate (s.gate);
     if (s.transposeNote >= 0) seq.noteIn (s.transposeNote);
